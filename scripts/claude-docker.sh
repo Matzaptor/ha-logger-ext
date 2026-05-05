@@ -13,7 +13,7 @@ fi
 
 if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
 	echo "ANTHROPIC_API_KEY is not set." >&2
-	exit 1
+	#exit 1
 fi
 
 export HOST_UID="$(id -u)"
