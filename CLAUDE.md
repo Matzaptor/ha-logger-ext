@@ -6,7 +6,7 @@ Project name: `ha-logger-ext`
 
 This repository contains a Home Assistant custom integration intended to provide an extended logging component optimized for Machine Learning datasets.
 
-The goal is to collect Home Assistant state changes, events, and telemetry into a structured database schema designed for analytics, feature engineering, and model training.
+The goal is to collect Home Assistant entity state and attribute observations into a structured database schema designed for analytics, feature engineering, reproducible exports, and model training.
 
 The project must be developed with the long-term objective of being compatible with Home Assistant standards and potentially acceptable as an official integration in the future, without depending on HACS-specific behavior.
 
@@ -111,7 +111,7 @@ Configuration may eventually include:
 - database path, host, port, and database name
 - database username and password where applicable
 - entities to include or exclude
-- event types to include or exclude
+- attributes to include or exclude
 - retention policy
 - flush interval
 - batch size
@@ -125,13 +125,54 @@ Do not require users to configure:
 
 Those are not appropriate for an integration running inside Home Assistant.
 
+## Core data model
+
+This integration must not primarily persist raw Home Assistant events.
+
+The primary dataset is based on entity state and attribute observations.
+
+Each stored record should represent one observed value for one entity field over a validity interval.
+
+A field may be:
+
+- the entity state itself
+- one entity attribute
+
+Each persisted record should include at least:
+
+- entity id
+- field name
+- value
+- first inserted timestamp
+- last seen timestamp
+
+The storage layer must avoid inserting duplicate rows for repeated observations of the same value.
+
+Deduplication must be applied against the latest stored value for the same entity id and field name.
+
+If the latest stored value for the same entity id and field name is equal to the newly observed value, the integration must not insert a duplicate record. Instead, it should update the latest record's last seen timestamp.
+
+If the value changed, the integration must insert a new record with a new validity interval.
+
+Do not use a uniqueness rule based only on entity id, field name, and value across the entire history, because the same value may legitimately appear again after a different value.
+
+Example:
+
+- `temperature = 20`
+- `temperature = 21`
+- `temperature = 20`
+
+The second `20` must create a new validity interval, not update the first historical `20`.
+
+This compact validity-range representation is better suited for Machine Learning datasets and historical feature extraction than raw event streams.
+
 ## Database design goals
 
 The database schema should be optimized for downstream Machine Learning and analytics workflows.
 
 Design principles:
 
-- preserve raw event and state data where useful
+- preserve entity state and attribute observations where useful
 - normalize where it improves querying and storage efficiency
 - keep timestamps precise and timezone-safe
 - store entity metadata separately from time-series observations where appropriate
@@ -140,12 +181,16 @@ Design principles:
 - keep backend-specific SQL isolated behind a storage abstraction
 - design for reliable exports and reproducible datasets
 - keep schema migrations explicit and testable
+- avoid duplicate records when the latest value has not changed
+- represent value validity ranges through first-seen and last-seen timestamps
 
 The first implementation may start with SQLite if that reduces complexity, but the architecture must not prevent adding other database engines later.
 
+The database schema should be generated and initialized automatically by the integration, similarly to how Home Assistant's native recorder manages its own storage setup.
+
 ## Recorder relationship
 
-This integration is inspired by Home Assistant's standard recorder behavior, but it should not blindly clone its schema.
+This integration is inspired by Home Assistant's standard recorder behavior, but it should not blindly clone its schema or internals.
 
 The objective is to provide an alternative logging format better suited for:
 
@@ -154,10 +199,13 @@ The objective is to provide an alternative logging format better suited for:
 - historical analysis
 - ML training pipelines
 - reproducible exports
+- compact historical state representation
 
 When possible, reuse Home Assistant event and state APIs rather than duplicating internal recorder behavior.
 
 Do not depend on unsupported internal recorder implementation details unless there is a clear reason and the trade-off is documented.
+
+The integration should be conceptually similar to the native recorder/logger role, but its storage model must be different and optimized for ML-oriented state and attribute history.
 
 ## Code quality rules
 
@@ -180,17 +228,17 @@ Do not depend on unsupported internal recorder implementation details unless the
 
 The integration must not block the Home Assistant event loop.
 
-For event and state logging:
+For state and attribute logging:
 
-- avoid slow operations inside event callbacks
+- avoid slow operations inside callbacks
 - buffer writes where appropriate
 - use controlled batch flushing
 - handle shutdown cleanly
 - avoid unbounded memory growth
-- apply backpressure or dropping policy if needed
+- apply backpressure or a documented dropping policy if needed
 - document any data-loss trade-offs clearly
 
-Database writes must be designed so that Home Assistant remains responsive even under high event volume.
+Database writes must be designed so that Home Assistant remains responsive even under high state-change volume.
 
 ## Testing expectations
 
@@ -203,10 +251,13 @@ Prioritize tests for:
 - duplicate configuration prevention
 - setup and unload
 - database schema initialization
-- event/state serialization
+- state serialization
+- attribute serialization
+- deduplication logic
+- validity-range behavior
 - migration behavior
 - error handling
-- event listener registration and cleanup
+- listener registration and cleanup
 - graceful shutdown behavior
 
 Tests should be deterministic and must not require a real Home Assistant server, real database server, or real API tokens unless explicitly marked as integration or manual tests.
@@ -225,6 +276,9 @@ Documentation should eventually cover:
 - development setup
 - security notes
 - roadmap
+- database model
+- deduplication behavior
+- validity-range semantics
 
 Documentation should be clear enough for Home Assistant users and precise enough for future maintainers.
 
@@ -244,6 +298,7 @@ Examples:
 
 - `feat: add initial Home Assistant integration scaffold`
 - `feat(storage): add SQLite schema initializer`
+- `feat(storage): add state value deduplication`
 - `fix(config-flow): validate database connection settings`
 - `test: add config flow coverage`
 - `docs: document local development setup`
@@ -308,6 +363,7 @@ This project is not intended to be:
 - a telemetry exporter that sends user data outside the local environment by default
 - an external Home Assistant client
 - a replacement for Home Assistant's core event bus
+- a raw event archive
 
 The default behavior must be local-first and privacy-respecting.
 
@@ -322,11 +378,13 @@ Then proceed in this order:
 3. setup and unload lifecycle
 4. storage abstraction
 5. SQLite backend
-6. event and state listener
-7. schema initialization
-8. tests
-9. documentation
-10. optional MySQL/PostgreSQL backend support
+6. schema initialization
+7. entity state and attribute observer
+8. deduplication logic
+9. batch flushing
+10. tests
+11. documentation
+12. optional MySQL/PostgreSQL backend support
 
 Do not start from advanced ML features before the integration foundation is stable.
 
@@ -335,8 +393,10 @@ Do not start from advanced ML features before the integration foundation is stab
 For the initial scaffold:
 
 - do not implement real database writes yet
+- do not implement full deduplication yet
 - do not add MySQL or PostgreSQL support yet
 - do not add external Home Assistant WebSocket access
+- do not persist raw Home Assistant events as the main dataset
 - do not introduce cloud services
 - do not require environment variables
 - do not require secrets
