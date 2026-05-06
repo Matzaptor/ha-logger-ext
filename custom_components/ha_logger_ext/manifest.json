@@ -7,7 +7,7 @@
   "issue_tracker": "https://github.com/Matzaptor/ha-logger-ext/issues",
   "requirements": ["aiosqlite>=0.19.0"],
   "dependencies": [],
-  "codeowners": [],
+  "codeowners": ["@Matzaptor"],
   "iot_class": "local_push",
   "single_config_entry": true
 }

@@ -1,0 +1,8 @@
+# Global owner — receives review requests for all files
+* @Matzaptor
+
+# Integration source
+custom_components/ha_logger_ext/ @Matzaptor
+
+# Tests
+tests/ @Matzaptor
