@@ -1,0 +1,24 @@
+rules:
+  # Bronze
+  action-exceptions: exempt       # no actions defined yet
+  config-flow: done
+  config-flow-test-coverage: done
+  dependency-transparency: done
+  docs-installation-instructions: done
+  docs-removal-instructions: done
+  entity-unavailable: exempt       # no entities; background logging component
+  has-tests: done
+  log-when-unavailable: exempt     # no entities
+  runtime-data: done
+  test-before-setup: done          # initialize() raises ConfigEntryNotReady on failure
+  unique-config-entry-per-device-or-service: done
+
+  # Silver
+  config-entry-unloading: done
+  diagnostics: done
+  docs-high-level-description: done
+  integration-owner: done
+  parallel-updates: exempt         # no entities or platforms
+  reconfiguration-flow: done
+  repair-issues: exempt            # no repairable issues defined yet
+  stale-devices: exempt            # no devices

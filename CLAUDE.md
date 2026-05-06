@@ -286,23 +286,15 @@ Do not document unsupported features as if they already exist.
 
 ## Git workflow
 
+Commit messages must follow Conventional Commits (see `CONTRIBUTING.md` for full reference and branch naming rules).
+
 Before proposing a commit, summarize:
 
 - what changed
 - why it changed
 - how it was tested
 
-Commit messages must follow Conventional Commits.
-
-Examples:
-
-- `feat: add initial Home Assistant integration scaffold`
-- `feat(storage): add SQLite schema initializer`
-- `feat(storage): add state value deduplication`
-- `fix(config-flow): validate database connection settings`
-- `test: add config flow coverage`
-- `docs: document local development setup`
-- `refactor(storage): isolate backend-specific SQL`
+Never push directly to protected branches (`dev/*`, `qa/*`, `uat/*`, `staging/*`, `prod/*`, `master`). Work on a `feat/*`, `fix/*`, or equivalent branch and open a pull request against `dev/main`.
 
 ## Development workflow
 
@@ -367,42 +359,41 @@ This project is not intended to be:
 
 The default behavior must be local-first and privacy-respecting.
 
-## Preferred implementation direction
+## Implementation status
 
-Start with a clean custom integration scaffold.
-
-Then proceed in this order:
+### Completed
 
 1. domain constants and manifest
-2. config flow
+2. config flow (UI-based, SQLite default)
 3. setup and unload lifecycle
-4. storage abstraction
-5. SQLite backend
-6. schema initialization
-7. entity state and attribute observer
-8. deduplication logic
-9. batch flushing
-10. tests
-11. documentation
-12. optional MySQL/PostgreSQL backend support
+4. storage abstraction (`StorageBackend` ABC, `ObservationRecord` dataclass)
+5. SQLite backend (`aiosqlite`, WAL, FK cascade, typed columns, UUIDv7 PKs)
+6. schema initialization (auto on first load)
+7. entity state and attribute observer (`EVENT_STATE_CHANGED` listener)
+8. deduplication logic (validity-range semantics, 10 typed value columns)
+9. buffered async queue with periodic flush
+10. initial test suite (44 tests: config flow, serialization, storage, dedup)
 
-Do not start from advanced ML features before the integration foundation is stable.
+### Next
 
-## Initial implementation constraints
+11. batch DB transactions (single transaction per flush, not per operation)
+12. `EVENT_HOMEASSISTANT_STOP` listener for graceful shutdown flush
+13. entity and attribute filter config (include/exclude domain/entity_id/attribute)
+14. flush interval and batch size configurable via config entry options
+15. schema migration system (`schema_version` table)
+16. `diagnostics.py` (coordinator state, queue depth, last flush)
+17. `quality_scale.yaml`
+18. expanded test coverage (lifecycle, shutdown, filters, migration)
+19. documentation (README: install, config, schema, dedup semantics)
+20. optional MySQL/PostgreSQL backend
 
-For the initial scaffold:
+### Permanent constraints
 
-- do not implement real database writes yet
-- do not implement full deduplication yet
-- do not add MySQL or PostgreSQL support yet
 - do not add external Home Assistant WebSocket access
 - do not persist raw Home Assistant events as the main dataset
 - do not introduce cloud services
-- do not require environment variables
-- do not require secrets
-- do not create complex abstractions before the basic integration lifecycle is working
-
-The first useful milestone is a valid Home Assistant custom integration scaffold that can be installed, configured, loaded, unloaded, and tested.
+- do not require environment variables or secrets in production
+- MySQL/PostgreSQL support must go behind the existing `StorageBackend` abstraction
 
 ## Local-only notes
 

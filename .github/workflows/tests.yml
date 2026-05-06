@@ -1,0 +1,51 @@
+name: Tests
+
+on:
+  push:
+    branches:
+      - master
+      - "dev/**"
+      - "feat/**"
+      - "fix/**"
+      - "refactor/**"
+      - "test/**"
+      - "docs/**"
+      - "chore/**"
+      - "ci/**"
+      - "perf/**"
+  pull_request:
+    branches:
+      - master
+      - "dev/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-test.txt
+
+      - name: Run tests
+        run: pytest tests/ -v --junitxml=test-results-${{ matrix.python-version }}.xml
+
+      - name: Publish test report
+        uses: dorny/test-reporter@v3
+        if: always()
+        with:
+          name: Test Results (Python ${{ matrix.python-version }})
+          path: test-results-${{ matrix.python-version }}.xml
+          reporter: java-junit
+          fail-on-error: false

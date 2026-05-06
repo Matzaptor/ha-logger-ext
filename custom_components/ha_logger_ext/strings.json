@@ -1,0 +1,65 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configure HA Logger Extended",
+        "description": "Set up the extended logging integration for ML datasets.",
+        "data": {
+          "db_type": "Database type",
+          "db_path": "Database file path (relative to HA config directory)",
+          "exclude_domains": "Exclude domains (comma-separated, e.g. automation,sun)",
+          "exclude_entities": "Exclude entities (comma-separated entity IDs)",
+          "exclude_attributes": "Exclude attributes (comma-separated attribute names)"
+        },
+        "data_description": {
+          "db_type": "Select the database backend.",
+          "db_path": "Path to the SQLite database file.",
+          "exclude_domains": "Domains whose entities will not be logged.",
+          "exclude_entities": "Specific entity IDs that will not be logged.",
+          "exclude_attributes": "Attribute names that will never be logged for any entity."
+        }
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Only one instance of HA Logger Extended is allowed.",
+      "reconfigure_successful": "Re-configuration was successful."
+    },
+    "error": {
+      "cannot_connect": "Unable to initialize the database."
+    },
+    "reconfigure": {
+      "reconfigure": {
+        "title": "Reconfigure HA Logger Extended",
+        "description": "Update the database connection and filter settings. The integration will reload automatically.",
+        "data": {
+          "db_type": "Database type",
+          "db_path": "Database file path",
+          "exclude_domains": "Exclude domains",
+          "exclude_entities": "Exclude entities",
+          "exclude_attributes": "Exclude attributes"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Performance Options",
+        "data": {
+          "flush_interval": "Flush interval (seconds)",
+          "queue_max_size": "Queue size limit (observations)",
+          "exclude_domains": "Exclude domains (comma-separated)",
+          "exclude_entities": "Exclude entities (comma-separated)",
+          "exclude_attributes": "Exclude attributes (comma-separated)"
+        },
+        "data_description": {
+          "flush_interval": "How often buffered observations are written to the database.",
+          "queue_max_size": "Maximum number of state snapshots held in memory before dropping.",
+          "exclude_domains": "Overrides the value set at setup. Leave empty to keep the current setting.",
+          "exclude_entities": "Overrides the value set at setup. Leave empty to keep the current setting.",
+          "exclude_attributes": "Overrides the value set at setup. Leave empty to keep the current setting."
+        }
+      }
+    }
+  }
+}
