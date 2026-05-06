@@ -4,8 +4,13 @@
 
 .vscode
 .venv
+test
 
 CLAUDE.local.md
 *.db
 *.sqlite
 *.sqlite3
+
+__pycache__/
+*.py[cod]
+.pytest_cache/

@@ -1,0 +1,24 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configure HA Logger Extended",
+        "description": "Set up the extended logging integration for ML datasets.",
+        "data": {
+          "db_type": "Database type",
+          "db_path": "Database file path (relative to HA config directory)"
+        },
+        "data_description": {
+          "db_type": "Select the database backend.",
+          "db_path": "Path to the SQLite database file."
+        }
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Only one instance of HA Logger Extended is allowed."
+    },
+    "error": {
+      "cannot_connect": "Unable to initialize the database."
+    }
+  }
+}
