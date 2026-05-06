@@ -39,4 +39,13 @@ jobs:
         run: pip install -r requirements-test.txt
 
       - name: Run tests
-        run: pytest tests/ -v
+        run: pytest tests/ -v --junitxml=test-results-${{ matrix.python-version }}.xml
+
+      - name: Publish test report
+        uses: dorny/test-reporter@v3
+        if: always()
+        with:
+          name: Test Results (Python ${{ matrix.python-version }})
+          path: test-results-${{ matrix.python-version }}.xml
+          reporter: java-junit
+          fail-on-error: false
