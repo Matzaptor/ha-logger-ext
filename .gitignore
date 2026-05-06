@@ -3,6 +3,7 @@
 !.env.example
 
 .vscode
+.claude
 .venv
 test
 
