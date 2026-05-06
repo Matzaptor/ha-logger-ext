@@ -6,11 +6,17 @@
         "description": "Set up the extended logging integration for ML datasets.",
         "data": {
           "db_type": "Database type",
-          "db_path": "Database file path (relative to HA config directory)"
+          "db_path": "Database file path (relative to HA config directory)",
+          "exclude_domains": "Exclude domains (comma-separated, e.g. automation,sun)",
+          "exclude_entities": "Exclude entities (comma-separated entity IDs)",
+          "exclude_attributes": "Exclude attributes (comma-separated attribute names)"
         },
         "data_description": {
           "db_type": "Select the database backend.",
-          "db_path": "Path to the SQLite database file."
+          "db_path": "Path to the SQLite database file.",
+          "exclude_domains": "Domains whose entities will not be logged.",
+          "exclude_entities": "Specific entity IDs that will not be logged.",
+          "exclude_attributes": "Attribute names that will never be logged for any entity."
         }
       }
     },

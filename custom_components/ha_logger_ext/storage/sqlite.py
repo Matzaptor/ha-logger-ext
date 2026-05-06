@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -8,8 +9,18 @@ import aiosqlite
 
 from .base import ObservationRecord, StorageBackend
 
+_LOGGER = logging.getLogger(__name__)
+
+_SCHEMA_VERSION = 1
+
 _PRAGMA_FK = "PRAGMA foreign_keys = ON"
 _PRAGMA_WAL = "PRAGMA journal_mode = WAL"
+
+_SQL_CREATE_SCHEMA_VERSION = """
+CREATE TABLE IF NOT EXISTS schema_version (
+    version INTEGER NOT NULL
+)
+"""
 
 _SQL_CREATE_ENTITIES = """
 CREATE TABLE IF NOT EXISTS entities (
@@ -55,6 +66,10 @@ _SQL_CREATE_INDEXES = (
     "CREATE INDEX IF NOT EXISTS idx_obs_first_seen "
     "ON observations(first_seen)",
 )
+
+_SQL_SELECT_SCHEMA_VERSION = "SELECT version FROM schema_version LIMIT 1"
+_SQL_INSERT_SCHEMA_VERSION = "INSERT INTO schema_version (version) VALUES (?)"
+_SQL_UPDATE_SCHEMA_VERSION = "UPDATE schema_version SET version = ?"
 
 _SQL_SELECT_ENTITY = "SELECT id FROM entities WHERE entity_id = ?"
 _SQL_UPDATE_ENTITY_LAST_SEEN = "UPDATE entities SET last_seen = ? WHERE id = ?"
@@ -104,17 +119,92 @@ class SQLiteBackend(StorageBackend):
     def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
         self._conn: aiosqlite.Connection | None = None
+        self._in_transaction = False
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
 
     async def initialize(self) -> None:
         self._conn = await aiosqlite.connect(self._db_path)
         self._conn.row_factory = aiosqlite.Row
         await self._conn.execute(_PRAGMA_FK)
         await self._conn.execute(_PRAGMA_WAL)
-        await self._conn.execute(_SQL_CREATE_ENTITIES)
-        await self._conn.execute(_SQL_CREATE_OBSERVATIONS)
-        for sql in _SQL_CREATE_INDEXES:
-            await self._conn.execute(sql)
+        await self._apply_migrations()
         await self._conn.commit()
+
+    async def close(self) -> None:
+        if self._conn is not None:
+            await self._conn.close()
+            self._conn = None
+
+    # ------------------------------------------------------------------
+    # Schema migrations
+    # ------------------------------------------------------------------
+
+    async def _apply_migrations(self) -> None:
+        await self._conn.execute(_SQL_CREATE_SCHEMA_VERSION)
+
+        async with self._conn.execute(_SQL_SELECT_SCHEMA_VERSION) as cur:
+            row = await cur.fetchone()
+        current = row["version"] if row else 0
+
+        if current == 0:
+            _LOGGER.debug("Initializing fresh database schema (version %d)", _SCHEMA_VERSION)
+            await self._conn.execute(_SQL_CREATE_ENTITIES)
+            await self._conn.execute(_SQL_CREATE_OBSERVATIONS)
+            for sql in _SQL_CREATE_INDEXES:
+                await self._conn.execute(sql)
+            await self._conn.execute(_SQL_INSERT_SCHEMA_VERSION, (_SCHEMA_VERSION,))
+            return
+
+        if current == _SCHEMA_VERSION:
+            return
+
+        if current > _SCHEMA_VERSION:
+            raise RuntimeError(
+                f"Database schema version {current} is newer than integration "
+                f"schema version {_SCHEMA_VERSION}. Please update the integration."
+            )
+
+        # Incremental migrations (none yet; added here as schema evolves)
+        for target in range(current + 1, _SCHEMA_VERSION + 1):
+            _LOGGER.info("Migrating database schema to version %d", target)
+            await self._run_migration(current, target)
+        await self._conn.execute(_SQL_UPDATE_SCHEMA_VERSION, (_SCHEMA_VERSION,))
+
+    async def _run_migration(self, from_version: int, to_version: int) -> None:
+        # Future: add elif branches here for each new schema version.
+        raise NotImplementedError(
+            f"No migration path from schema version {from_version} to {to_version}."
+        )
+
+    # ------------------------------------------------------------------
+    # Transaction control
+    # ------------------------------------------------------------------
+
+    async def begin(self) -> None:
+        self._in_transaction = True
+
+    async def commit(self) -> None:
+        assert self._conn is not None
+        await self._conn.commit()
+        self._in_transaction = False
+
+    async def rollback(self) -> None:
+        assert self._conn is not None
+        await self._conn.rollback()
+        self._in_transaction = False
+
+    async def _maybe_commit(self) -> None:
+        """Commit only when not inside an explicit transaction."""
+        if not self._in_transaction:
+            assert self._conn is not None
+            await self._conn.commit()
+
+    # ------------------------------------------------------------------
+    # Entity management
+    # ------------------------------------------------------------------
 
     async def get_or_create_entity(
         self, entity_id: str, domain: str, ts: datetime
@@ -128,7 +218,7 @@ class SQLiteBackend(StorageBackend):
         if row is not None:
             pk = _from_blob(row["id"])
             await self._conn.execute(_SQL_UPDATE_ENTITY_LAST_SEEN, (ts_str, _to_blob(pk)))
-            await self._conn.commit()
+            await self._maybe_commit()
             return pk
 
         from .uuid7 import uuid7
@@ -136,8 +226,12 @@ class SQLiteBackend(StorageBackend):
         await self._conn.execute(
             _SQL_INSERT_ENTITY, (_to_blob(pk), entity_id, domain, ts_str, ts_str)
         )
-        await self._conn.commit()
+        await self._maybe_commit()
         return pk
+
+    # ------------------------------------------------------------------
+    # Observations
+    # ------------------------------------------------------------------
 
     async def get_latest_observation(
         self, entity_pk: uuid.UUID, field_name: str
@@ -170,19 +264,14 @@ class SQLiteBackend(StorageBackend):
                 _fmt(obs.last_seen),
             ),
         )
-        await self._conn.commit()
+        await self._maybe_commit()
 
     async def update_last_seen(self, obs_id: uuid.UUID, ts: datetime) -> None:
         assert self._conn is not None
         await self._conn.execute(
             _SQL_UPDATE_OBS_LAST_SEEN, (_fmt(ts), _to_blob(obs_id))
         )
-        await self._conn.commit()
-
-    async def close(self) -> None:
-        if self._conn is not None:
-            await self._conn.close()
-            self._conn = None
+        await self._maybe_commit()
 
 
 def _row_to_record(row: aiosqlite.Row) -> ObservationRecord:

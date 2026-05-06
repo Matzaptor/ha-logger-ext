@@ -46,3 +46,17 @@ class StorageBackend(ABC):
 
     @abstractmethod
     async def close(self) -> None: ...
+
+    # --- Transaction control ---
+    # Concrete backends may override these to batch multiple operations into a
+    # single DB transaction. Default implementations are no-ops so that callers
+    # that skip begin()/commit() still work correctly (each write auto-commits).
+
+    async def begin(self) -> None:
+        """Start an explicit transaction."""
+
+    async def commit(self) -> None:
+        """Commit the current transaction."""
+
+    async def rollback(self) -> None:
+        """Roll back the current transaction."""

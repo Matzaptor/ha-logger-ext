@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import aiosqlite
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -7,7 +8,7 @@ import pytest
 
 from custom_components.ha_logger_ext.storage.base import ObservationRecord
 from custom_components.ha_logger_ext.storage.serialization import serialize, values_equal
-from custom_components.ha_logger_ext.storage.sqlite import SQLiteBackend
+from custom_components.ha_logger_ext.storage.sqlite import SQLiteBackend, _SCHEMA_VERSION
 from custom_components.ha_logger_ext.storage.uuid7 import uuid7
 
 TS = datetime(2026, 5, 6, 10, 0, 0, tzinfo=timezone.utc)
@@ -188,3 +189,125 @@ class TestDeduplicationLogic:
         latest = await backend.get_latest_observation(pk, "state")
         assert latest.value_str == "off"
         assert latest.first_seen == t1
+
+
+class TestSchemaMigrations:
+    async def test_fresh_db_gets_schema_version(self, tmp_path: Path) -> None:
+        b = SQLiteBackend(tmp_path / "test.db")
+        await b.initialize()
+
+        async with aiosqlite.connect(tmp_path / "test.db") as conn:
+            conn.row_factory = aiosqlite.Row
+            async with conn.execute("SELECT version FROM schema_version") as cur:
+                row = await cur.fetchone()
+        assert row["version"] == _SCHEMA_VERSION
+
+        await b.close()
+
+    async def test_existing_db_without_schema_version_is_adopted(
+        self, tmp_path: Path
+    ) -> None:
+        """Databases created before schema_version was introduced are adopted at v1."""
+        db_path = tmp_path / "old.db"
+
+        # Create a database with the old structure (no schema_version table)
+        async with aiosqlite.connect(db_path) as conn:
+            await conn.execute("""
+                CREATE TABLE entities (
+                    id BLOB NOT NULL PRIMARY KEY,
+                    entity_id TEXT NOT NULL UNIQUE,
+                    domain TEXT NOT NULL,
+                    first_seen TEXT NOT NULL,
+                    last_seen TEXT NOT NULL
+                )
+            """)
+            await conn.execute("""
+                CREATE TABLE observations (
+                    id BLOB NOT NULL PRIMARY KEY,
+                    entity_pk BLOB NOT NULL,
+                    field TEXT NOT NULL,
+                    value_type TEXT NOT NULL,
+                    value_str TEXT,
+                    value_int INTEGER,
+                    value_float REAL,
+                    value_bool INTEGER,
+                    value_datetime TEXT,
+                    value_date TEXT,
+                    value_time TEXT,
+                    value_json TEXT,
+                    first_seen TEXT NOT NULL,
+                    last_seen TEXT NOT NULL
+                )
+            """)
+            await conn.commit()
+
+        # initialize() should adopt the existing DB without errors
+        b = SQLiteBackend(db_path)
+        await b.initialize()
+
+        async with aiosqlite.connect(db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            async with conn.execute("SELECT version FROM schema_version") as cur:
+                row = await cur.fetchone()
+        assert row["version"] == _SCHEMA_VERSION
+
+        await b.close()
+
+    async def test_newer_schema_version_raises(self, tmp_path: Path) -> None:
+        """If DB has a newer schema version than the code, raise RuntimeError."""
+        db_path = tmp_path / "future.db"
+
+        async with aiosqlite.connect(db_path) as conn:
+            await conn.execute(
+                "CREATE TABLE schema_version (version INTEGER NOT NULL)"
+            )
+            await conn.execute(
+                "INSERT INTO schema_version (version) VALUES (?)", (_SCHEMA_VERSION + 1,)
+            )
+            await conn.commit()
+
+        b = SQLiteBackend(db_path)
+        with pytest.raises(RuntimeError, match="newer"):
+            await b.initialize()
+        await b.close()
+
+
+class TestBatchTransactions:
+    async def test_begin_defers_commit(self, tmp_path: Path) -> None:
+        b = SQLiteBackend(tmp_path / "test.db")
+        await b.initialize()
+        pk = await b.get_or_create_entity("sensor.temp", "sensor", TS)
+
+        await b.begin()
+        obs = ObservationRecord(
+            id=__import__("custom_components.ha_logger_ext.storage.uuid7", fromlist=["uuid7"]).uuid7(),
+            entity_pk=pk, field_name="state", value_type="float",
+            value_float=20.0, first_seen=TS, last_seen=TS,
+        )
+        await b.insert_observation(obs)
+        # commit not yet called — record exists in the transaction but
+        # reading within same connection shows it (SQLite in-transaction reads)
+        latest = await b.get_latest_observation(pk, "state")
+        assert latest is not None
+
+        await b.commit()
+        await b.close()
+
+    async def test_rollback_discards_writes(self, tmp_path: Path) -> None:
+        b = SQLiteBackend(tmp_path / "test.db")
+        await b.initialize()
+        pk = await b.get_or_create_entity("sensor.temp", "sensor", TS)
+
+        await b.begin()
+        from custom_components.ha_logger_ext.storage.uuid7 import uuid7
+        obs = ObservationRecord(
+            id=uuid7(), entity_pk=pk, field_name="state",
+            value_type="float", value_float=99.0, first_seen=TS, last_seen=TS,
+        )
+        await b.insert_observation(obs)
+        await b.rollback()
+
+        latest = await b.get_latest_observation(pk, "state")
+        assert latest is None
+
+        await b.close()

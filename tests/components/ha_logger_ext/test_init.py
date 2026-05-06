@@ -1,0 +1,199 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP
+from homeassistant.core import HomeAssistant
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+from custom_components.ha_logger_ext.const import (
+    CONF_DB_PATH,
+    CONF_DB_TYPE,
+    CONF_EXCLUDE_ATTRIBUTES,
+    CONF_EXCLUDE_DOMAINS,
+    CONF_EXCLUDE_ENTITIES,
+    DB_TYPE_SQLITE,
+    DOMAIN,
+)
+
+
+def _make_entry(hass: HomeAssistant, **overrides) -> MockConfigEntry:
+    data = {
+        CONF_DB_TYPE: DB_TYPE_SQLITE,
+        CONF_DB_PATH: "test.db",
+        CONF_EXCLUDE_DOMAINS: [],
+        CONF_EXCLUDE_ENTITIES: [],
+        CONF_EXCLUDE_ATTRIBUTES: [],
+        **overrides,
+    }
+    entry = MockConfigEntry(domain=DOMAIN, data=data)
+    entry.add_to_hass(hass)
+    return entry
+
+
+def _mock_backend() -> MagicMock:
+    backend = AsyncMock()
+    backend.get_latest_observation.return_value = None
+    backend.get_or_create_entity.return_value = __import__("uuid").uuid4()
+    return backend
+
+
+@pytest.fixture
+def mock_backend():
+    return _mock_backend()
+
+
+@pytest.fixture
+def patched_factory(mock_backend):
+    with patch(
+        "custom_components.ha_logger_ext.create_backend",
+        return_value=mock_backend,
+    ):
+        yield mock_backend
+
+
+class TestSetupAndUnload:
+    async def test_setup_creates_coordinator(
+        self, hass: HomeAssistant, patched_factory
+    ) -> None:
+        entry = _make_entry(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert hasattr(entry, "runtime_data")
+        assert entry.runtime_data.is_running
+
+    async def test_unload_stops_coordinator(
+        self, hass: HomeAssistant, patched_factory
+    ) -> None:
+        entry = _make_entry(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = entry.runtime_data
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        assert not coordinator.is_running
+
+    async def test_unload_closes_backend(
+        self, hass: HomeAssistant, patched_factory, mock_backend
+    ) -> None:
+        entry = _make_entry(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        mock_backend.close.assert_called_once()
+
+    async def test_setup_failure_sets_retry_state(
+        self, hass: HomeAssistant
+    ) -> None:
+        from homeassistant.config_entries import ConfigEntryState
+
+        entry = _make_entry(hass)
+        with patch(
+            "custom_components.ha_logger_ext.create_backend"
+        ) as mock_factory:
+            mock_backend = AsyncMock()
+            mock_backend.initialize.side_effect = OSError("disk full")
+            mock_factory.return_value = mock_backend
+
+            # HA catches ConfigEntryNotReady internally and schedules a retry.
+            await hass.config_entries.async_setup(entry.entry_id)
+            assert entry.state == ConfigEntryState.SETUP_RETRY
+
+
+class TestGracefulShutdown:
+    async def test_ha_stop_triggers_flush(
+        self, hass: HomeAssistant, patched_factory, mock_backend
+    ) -> None:
+        from custom_components.ha_logger_ext import _StateSnapshot
+
+        entry = _make_entry(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = entry.runtime_data
+        # Pre-populate queue so flush has actual work to do
+        coordinator._queue.put_nowait(
+            _StateSnapshot(
+                entity_id="sensor.test",
+                state="25.0",
+                attributes={},
+                ts=datetime(2026, 5, 6, 10, 0, 0, tzinfo=timezone.utc),
+            )
+        )
+
+        hass.bus.async_fire(EVENT_HOMEASSISTANT_STOP)
+        await hass.async_block_till_done()
+
+        # begin() is invoked during flush when the queue is non-empty
+        assert mock_backend.begin.called
+
+    async def test_stop_is_idempotent(
+        self, hass: HomeAssistant, patched_factory, mock_backend
+    ) -> None:
+        entry = _make_entry(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = entry.runtime_data
+        await coordinator.stop()
+        await coordinator.stop()  # second call must not raise
+
+        assert not coordinator.is_running
+
+
+class TestEntityFilters:
+    async def test_excluded_domain_not_tracked(
+        self, hass: HomeAssistant, patched_factory
+    ) -> None:
+        entry = _make_entry(hass, **{CONF_EXCLUDE_DOMAINS: ["automation"]})
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = entry.runtime_data
+        assert not coordinator._should_track_entity("automation.morning_routine")
+        assert coordinator._should_track_entity("sensor.temperature")
+
+    async def test_excluded_entity_not_tracked(
+        self, hass: HomeAssistant, patched_factory
+    ) -> None:
+        entry = _make_entry(
+            hass, **{CONF_EXCLUDE_ENTITIES: ["sensor.noisy_sensor"]}
+        )
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = entry.runtime_data
+        assert not coordinator._should_track_entity("sensor.noisy_sensor")
+        assert coordinator._should_track_entity("sensor.temperature")
+
+    async def test_excluded_attribute_not_tracked(
+        self, hass: HomeAssistant, patched_factory
+    ) -> None:
+        entry = _make_entry(
+            hass, **{CONF_EXCLUDE_ATTRIBUTES: ["entity_picture", "icon"]}
+        )
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = entry.runtime_data
+        assert not coordinator._should_track_attribute("entity_picture")
+        assert not coordinator._should_track_attribute("icon")
+        assert coordinator._should_track_attribute("unit_of_measurement")
+
+    async def test_state_change_for_excluded_entity_is_ignored(
+        self, hass: HomeAssistant, patched_factory, mock_backend
+    ) -> None:
+        entry = _make_entry(hass, **{CONF_EXCLUDE_DOMAINS: ["sun"]})
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        hass.states.async_set("sun.sun", "above_horizon")
+        await hass.async_block_till_done()
+
+        # Nothing should land in the queue for sun.sun
+        coordinator = entry.runtime_data
+        assert coordinator.queue_size == 0

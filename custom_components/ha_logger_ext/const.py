@@ -2,6 +2,7 @@ from __future__ import annotations
 
 DOMAIN = "ha_logger_ext"
 
+# Database config
 CONF_DB_TYPE = "db_type"
 CONF_DB_PATH = "db_path"
 CONF_DB_HOST = "db_host"
@@ -17,5 +18,11 @@ DB_TYPE_POSTGRESQL = "postgresql"
 DEFAULT_DB_TYPE = DB_TYPE_SQLITE
 DEFAULT_DB_PATH = "ha_logger_ext.db"
 
-FLUSH_INTERVAL = 30  # seconds between buffer flushes
-QUEUE_MAX_SIZE = 10_000  # max buffered snapshots before dropping
+# Filter config (stored as list[str] in config entry data)
+CONF_EXCLUDE_DOMAINS = "exclude_domains"
+CONF_EXCLUDE_ENTITIES = "exclude_entities"
+CONF_EXCLUDE_ATTRIBUTES = "exclude_attributes"
+
+# Performance
+FLUSH_INTERVAL = 30       # seconds between buffer flushes
+QUEUE_MAX_SIZE = 10_000   # max buffered snapshots before dropping

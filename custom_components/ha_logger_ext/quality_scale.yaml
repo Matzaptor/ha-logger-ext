@@ -1,0 +1,14 @@
+rules:
+  # Bronze
+  action-exceptions: exempt  # no actions defined yet
+  config-flow: done
+  config-flow-test-coverage: done
+  dependency-transparency: done
+  docs-installation-instructions: todo
+  docs-removal-instructions: todo
+  entity-unavailable: exempt  # no entities; this is a background logging component
+  has-tests: done
+  log-when-unavailable: exempt  # no entities
+  runtime-data: done
+  test-before-setup: done  # initialize() raises ConfigEntryNotReady on failure
+  unique-config-entry-per-device-or-service: done
