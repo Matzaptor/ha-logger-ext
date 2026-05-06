@@ -296,6 +296,11 @@ async def test_reconfigure_updates_and_reloads(hass: HomeAssistant) -> None:
                 CONF_EXCLUDE_DOMAINS: "sun",
             },
         )
+        # Wait for the reload triggered by async_update_reload_and_abort to
+        # complete while the mock is still active. Without this, the real
+        # SQLiteBackend would be created in the reload, leaving an aiosqlite
+        # worker thread alive and causing HA's cleanup fixture to fail.
+        await hass.async_block_till_done()
 
     assert result["type"] == FlowResultType.ABORT
     assert result["reason"] == "reconfigure_successful"
