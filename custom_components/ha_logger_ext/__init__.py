@@ -15,9 +15,11 @@ from .const import (
     CONF_EXCLUDE_ATTRIBUTES,
     CONF_EXCLUDE_DOMAINS,
     CONF_EXCLUDE_ENTITIES,
+    CONF_FLUSH_INTERVAL,
+    CONF_QUEUE_MAX_SIZE,
+    DEFAULT_FLUSH_INTERVAL,
+    DEFAULT_QUEUE_MAX_SIZE,
     DOMAIN,
-    FLUSH_INTERVAL,
-    QUEUE_MAX_SIZE,
 )
 from .storage.base import ObservationRecord, StorageBackend
 from .storage.factory import create_backend
@@ -42,9 +44,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except Exception as err:
         raise ConfigEntryNotReady(f"Failed to initialize storage backend: {err}") from err
 
-    coordinator = LoggerCoordinator(hass, backend, entry.data)
+    coordinator = LoggerCoordinator(hass, backend, entry.data, entry.options)
     await coordinator.start()
     entry.runtime_data = coordinator
+    entry.async_on_unload(entry.add_update_listener(_async_reload_on_options_change))
     return True
 
 
@@ -54,26 +57,41 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
+async def _async_reload_on_options_change(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
 class LoggerCoordinator:
     def __init__(
-        self, hass: HomeAssistant, backend: StorageBackend, config: dict[str, Any]
+        self,
+        hass: HomeAssistant,
+        backend: StorageBackend,
+        data: dict[str, Any],
+        options: dict[str, Any] | None = None,
     ) -> None:
         self._hass = hass
         self._backend = backend
-        self._queue: asyncio.Queue[_StateSnapshot] = asyncio.Queue(maxsize=QUEUE_MAX_SIZE)
+        self._stopped = False
+
+        opts = options or {}
+        self._flush_interval: int = opts.get(CONF_FLUSH_INTERVAL, DEFAULT_FLUSH_INTERVAL)
+        queue_max: int = opts.get(CONF_QUEUE_MAX_SIZE, DEFAULT_QUEUE_MAX_SIZE)
+
+        self._queue: asyncio.Queue[_StateSnapshot] = asyncio.Queue(maxsize=queue_max)
         self._flush_task: asyncio.Task | None = None
         self._unsub_states: Any = None
         self._unsub_stop: Any = None
-        self._stopped = False
 
         self._exclude_domains: frozenset[str] = frozenset(
-            config.get(CONF_EXCLUDE_DOMAINS, [])
+            data.get(CONF_EXCLUDE_DOMAINS, [])
         )
         self._exclude_entities: frozenset[str] = frozenset(
-            config.get(CONF_EXCLUDE_ENTITIES, [])
+            data.get(CONF_EXCLUDE_ENTITIES, [])
         )
         self._exclude_attributes: frozenset[str] = frozenset(
-            config.get(CONF_EXCLUDE_ATTRIBUTES, [])
+            data.get(CONF_EXCLUDE_ATTRIBUTES, [])
         )
 
     # ------------------------------------------------------------------
@@ -176,10 +194,8 @@ class LoggerCoordinator:
 
     @callback
     def _on_ha_stop(self, event: Event) -> None:
-        # HA is shutting down — flush whatever is queued before the loop ends.
-        # async_unload_entry may also be called; stop() is idempotent.
-        # Clear _unsub_stop: the one-time listener has already fired and
-        # removed itself; calling it again in stop() would raise a KeyError.
+        # The one-time listener has already removed itself; clear our reference
+        # so stop() does not try to cancel it again.
         self._unsub_stop = None
         self._hass.async_create_task(self._flush())
 
@@ -189,7 +205,7 @@ class LoggerCoordinator:
 
     async def _flush_loop(self) -> None:
         while True:
-            await asyncio.sleep(FLUSH_INTERVAL)
+            await asyncio.sleep(self._flush_interval)
             await self._flush()
 
     async def _flush(self) -> None:

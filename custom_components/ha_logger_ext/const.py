@@ -23,6 +23,9 @@ CONF_EXCLUDE_DOMAINS = "exclude_domains"
 CONF_EXCLUDE_ENTITIES = "exclude_entities"
 CONF_EXCLUDE_ATTRIBUTES = "exclude_attributes"
 
-# Performance
-FLUSH_INTERVAL = 30       # seconds between buffer flushes
-QUEUE_MAX_SIZE = 10_000   # max buffered snapshots before dropping
+# Performance options (stored in config entry options)
+CONF_FLUSH_INTERVAL = "flush_interval"
+CONF_QUEUE_MAX_SIZE = "queue_max_size"
+
+DEFAULT_FLUSH_INTERVAL = 30       # seconds
+DEFAULT_QUEUE_MAX_SIZE = 10_000   # max buffered snapshots before dropping

@@ -36,8 +36,8 @@
           "queue_max_size": "Queue size limit (observations)"
         },
         "data_description": {
-          "flush_interval": "How often buffered observations are written to the database.",
-          "queue_max_size": "Maximum number of state snapshots held in memory before dropping."
+          "flush_interval": "How often buffered observations are written to the database. Lower values reduce data loss on crash but increase I/O.",
+          "queue_max_size": "Maximum number of state snapshots held in memory before dropping. Increase if you have many fast-changing entities."
         }
       }
     }
