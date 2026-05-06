@@ -145,6 +145,13 @@ Tests use `pytest-homeassistant-custom-component` and do not require a running H
 - No data retention policy yet — the database grows indefinitely.
 - No export tooling yet — query the SQLite file directly with any SQL client.
 
+## Removal
+
+1. Go to **Settings → Devices & Services → HA Logger Extended**.
+2. Click the three-dot menu → **Delete**.
+3. Restart Home Assistant.
+4. Optionally delete the database file from your HA config directory (default: `ha_logger_ext.db`).
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for branch naming conventions, commit message format, development setup, and the pull request checklist.

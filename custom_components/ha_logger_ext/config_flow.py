@@ -32,6 +32,34 @@ def _parse_csv(value: str) -> list[str]:
     return [x.strip() for x in value.split(",") if x.strip()]
 
 
+def _user_schema(
+    db_type: str = DB_TYPE_SQLITE,
+    db_path: str = DEFAULT_DB_PATH,
+    exclude_domains: str = "",
+    exclude_entities: str = "",
+    exclude_attributes: str = "",
+) -> vol.Schema:
+    return vol.Schema(
+        {
+            vol.Required(CONF_DB_TYPE, default=db_type): vol.In(_AVAILABLE_DB_TYPES),
+            vol.Optional(CONF_DB_PATH, default=db_path): str,
+            vol.Optional(CONF_EXCLUDE_DOMAINS, default=exclude_domains): str,
+            vol.Optional(CONF_EXCLUDE_ENTITIES, default=exclude_entities): str,
+            vol.Optional(CONF_EXCLUDE_ATTRIBUTES, default=exclude_attributes): str,
+        }
+    )
+
+
+def _build_data(user_input: dict) -> dict:
+    return {
+        CONF_DB_TYPE: user_input[CONF_DB_TYPE],
+        CONF_DB_PATH: user_input.get(CONF_DB_PATH, DEFAULT_DB_PATH),
+        CONF_EXCLUDE_DOMAINS: _parse_csv(user_input.get(CONF_EXCLUDE_DOMAINS, "")),
+        CONF_EXCLUDE_ENTITIES: _parse_csv(user_input.get(CONF_EXCLUDE_ENTITIES, "")),
+        CONF_EXCLUDE_ATTRIBUTES: _parse_csv(user_input.get(CONF_EXCLUDE_ATTRIBUTES, "")),
+    }
+
+
 class HaLoggerExtConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
@@ -48,33 +76,37 @@ class HaLoggerExtConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            data = {
-                CONF_DB_TYPE: user_input[CONF_DB_TYPE],
-                CONF_DB_PATH: user_input.get(CONF_DB_PATH, DEFAULT_DB_PATH),
-                CONF_EXCLUDE_DOMAINS: _parse_csv(
-                    user_input.get(CONF_EXCLUDE_DOMAINS, "")
-                ),
-                CONF_EXCLUDE_ENTITIES: _parse_csv(
-                    user_input.get(CONF_EXCLUDE_ENTITIES, "")
-                ),
-                CONF_EXCLUDE_ATTRIBUTES: _parse_csv(
-                    user_input.get(CONF_EXCLUDE_ATTRIBUTES, "")
-                ),
-            }
-            return self.async_create_entry(title="HA Logger Extended", data=data)
+            return self.async_create_entry(
+                title="HA Logger Extended",
+                data=_build_data(user_input),
+            )
 
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_DB_TYPE, default=DB_TYPE_SQLITE): vol.In(
-                        _AVAILABLE_DB_TYPES
-                    ),
-                    vol.Optional(CONF_DB_PATH, default=DEFAULT_DB_PATH): str,
-                    vol.Optional(CONF_EXCLUDE_DOMAINS, default=""): str,
-                    vol.Optional(CONF_EXCLUDE_ENTITIES, default=""): str,
-                    vol.Optional(CONF_EXCLUDE_ATTRIBUTES, default=""): str,
-                }
+            data_schema=_user_schema(),
+            errors=errors,
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict | None = None
+    ) -> FlowResult:
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            return self.async_update_reload_and_abort(
+                entry, data_updates=_build_data(user_input)
+            )
+
+        current = entry.data
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=_user_schema(
+                db_type=current.get(CONF_DB_TYPE, DB_TYPE_SQLITE),
+                db_path=current.get(CONF_DB_PATH, DEFAULT_DB_PATH),
+                exclude_domains=", ".join(current.get(CONF_EXCLUDE_DOMAINS, [])),
+                exclude_entities=", ".join(current.get(CONF_EXCLUDE_ENTITIES, [])),
+                exclude_attributes=", ".join(current.get(CONF_EXCLUDE_ATTRIBUTES, [])),
             ),
             errors=errors,
         )

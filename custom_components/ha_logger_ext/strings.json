@@ -21,10 +21,24 @@
       }
     },
     "abort": {
-      "single_instance_allowed": "Only one instance of HA Logger Extended is allowed."
+      "single_instance_allowed": "Only one instance of HA Logger Extended is allowed.",
+      "reconfigure_successful": "Re-configuration was successful."
     },
     "error": {
       "cannot_connect": "Unable to initialize the database."
+    },
+    "reconfigure": {
+      "reconfigure": {
+        "title": "Reconfigure HA Logger Extended",
+        "description": "Update the database connection and filter settings. The integration will reload automatically.",
+        "data": {
+          "db_type": "Database type",
+          "db_path": "Database file path",
+          "exclude_domains": "Exclude domains",
+          "exclude_entities": "Exclude entities",
+          "exclude_attributes": "Exclude attributes"
+        }
+      }
     }
   },
   "options": {
