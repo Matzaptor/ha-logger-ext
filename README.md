@@ -1,5 +1,7 @@
 # ha-logger-ext
 
+[![Tests](https://github.com/Matzaptor/ha-logger-ext/actions/workflows/tests.yml/badge.svg)](https://github.com/Matzaptor/ha-logger-ext/actions/workflows/tests.yml)
+
 A Home Assistant custom integration that logs entity state and attribute observations into a structured database optimized for Machine Learning datasets, feature engineering, and historical analysis.
 
 ## Why this exists
