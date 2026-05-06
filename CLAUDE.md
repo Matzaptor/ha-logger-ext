@@ -286,23 +286,15 @@ Do not document unsupported features as if they already exist.
 
 ## Git workflow
 
+Commit messages must follow Conventional Commits (see `CONTRIBUTING.md` for full reference and branch naming rules).
+
 Before proposing a commit, summarize:
 
 - what changed
 - why it changed
 - how it was tested
 
-Commit messages must follow Conventional Commits.
-
-Examples:
-
-- `feat: add initial Home Assistant integration scaffold`
-- `feat(storage): add SQLite schema initializer`
-- `feat(storage): add state value deduplication`
-- `fix(config-flow): validate database connection settings`
-- `test: add config flow coverage`
-- `docs: document local development setup`
-- `refactor(storage): isolate backend-specific SQL`
+Never push directly to protected branches (`dev/*`, `qa/*`, `uat/*`, `staging/*`, `prod/*`, `master`). Work on a `feat/*`, `fix/*`, or equivalent branch and open a pull request against `dev/main`.
 
 ## Development workflow
 

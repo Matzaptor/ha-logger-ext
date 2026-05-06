@@ -2,9 +2,21 @@ name: Tests
 
 on:
   push:
-    branches: [master, "dev/**"]
+    branches:
+      - master
+      - "dev/**"
+      - "feat/**"
+      - "fix/**"
+      - "refactor/**"
+      - "test/**"
+      - "docs/**"
+      - "chore/**"
+      - "ci/**"
+      - "perf/**"
   pull_request:
-    branches: [master]
+    branches:
+      - master
+      - "dev/**"
 
 jobs:
   test:

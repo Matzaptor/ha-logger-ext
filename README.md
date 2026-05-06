@@ -145,6 +145,10 @@ Tests use `pytest-homeassistant-custom-component` and do not require a running H
 - No data retention policy yet — the database grows indefinitely.
 - No export tooling yet — query the SQLite file directly with any SQL client.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for branch naming conventions, commit message format, development setup, and the pull request checklist.
+
 ## Security
 
 The integration runs entirely inside the Home Assistant process and stores data locally. No data is sent outside your local network. Do not commit database files, `.env` files, or HA tokens to version control.
