@@ -47,11 +47,17 @@
         "title": "Performance Options",
         "data": {
           "flush_interval": "Flush interval (seconds)",
-          "queue_max_size": "Queue size limit (observations)"
+          "queue_max_size": "Queue size limit (observations)",
+          "exclude_domains": "Exclude domains (comma-separated)",
+          "exclude_entities": "Exclude entities (comma-separated)",
+          "exclude_attributes": "Exclude attributes (comma-separated)"
         },
         "data_description": {
           "flush_interval": "How often buffered observations are written to the database.",
-          "queue_max_size": "Maximum number of state snapshots held in memory before dropping."
+          "queue_max_size": "Maximum number of state snapshots held in memory before dropping.",
+          "exclude_domains": "Overrides the value set at setup. Leave empty to keep the current setting.",
+          "exclude_entities": "Overrides the value set at setup. Leave empty to keep the current setting.",
+          "exclude_attributes": "Overrides the value set at setup. Leave empty to keep the current setting."
         }
       }
     }

@@ -120,21 +120,52 @@ class HaLoggerExtOptionsFlow(config_entries.OptionsFlow):
         self, user_input: dict | None = None
     ) -> FlowResult:
         if user_input is not None:
-            return self.async_create_entry(data=user_input)
+            return self.async_create_entry(data={
+                CONF_FLUSH_INTERVAL: user_input[CONF_FLUSH_INTERVAL],
+                CONF_QUEUE_MAX_SIZE: user_input[CONF_QUEUE_MAX_SIZE],
+                CONF_EXCLUDE_DOMAINS: _parse_csv(
+                    user_input.get(CONF_EXCLUDE_DOMAINS, "")
+                ),
+                CONF_EXCLUDE_ENTITIES: _parse_csv(
+                    user_input.get(CONF_EXCLUDE_ENTITIES, "")
+                ),
+                CONF_EXCLUDE_ATTRIBUTES: _parse_csv(
+                    user_input.get(CONF_EXCLUDE_ATTRIBUTES, "")
+                ),
+            })
 
-        current = self._config_entry.options
+        opts = self._config_entry.options
+        data = self._config_entry.data
+
+        # Effective values: options override data (backward compat for entries
+        # created before filters were added to the options flow).
+        def _effective(key: str) -> list[str]:
+            return opts.get(key, data.get(key, []))
+
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
                 {
                     vol.Optional(
                         CONF_FLUSH_INTERVAL,
-                        default=current.get(CONF_FLUSH_INTERVAL, DEFAULT_FLUSH_INTERVAL),
+                        default=opts.get(CONF_FLUSH_INTERVAL, DEFAULT_FLUSH_INTERVAL),
                     ): vol.All(int, vol.Range(min=5, max=300)),
                     vol.Optional(
                         CONF_QUEUE_MAX_SIZE,
-                        default=current.get(CONF_QUEUE_MAX_SIZE, DEFAULT_QUEUE_MAX_SIZE),
+                        default=opts.get(CONF_QUEUE_MAX_SIZE, DEFAULT_QUEUE_MAX_SIZE),
                     ): vol.All(int, vol.Range(min=100, max=100_000)),
+                    vol.Optional(
+                        CONF_EXCLUDE_DOMAINS,
+                        default=", ".join(_effective(CONF_EXCLUDE_DOMAINS)),
+                    ): str,
+                    vol.Optional(
+                        CONF_EXCLUDE_ENTITIES,
+                        default=", ".join(_effective(CONF_EXCLUDE_ENTITIES)),
+                    ): str,
+                    vol.Optional(
+                        CONF_EXCLUDE_ATTRIBUTES,
+                        default=", ".join(_effective(CONF_EXCLUDE_ATTRIBUTES)),
+                    ): str,
                 }
             ),
         )

@@ -141,6 +141,84 @@ async def test_options_flow_saves_values(hass: HomeAssistant) -> None:
     assert entry.options[CONF_QUEUE_MAX_SIZE] == 2000
 
 
+async def test_options_flow_saves_filter_as_list(hass: HomeAssistant) -> None:
+    entry = _entry_with_options(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_FLUSH_INTERVAL: DEFAULT_FLUSH_INTERVAL,
+            CONF_QUEUE_MAX_SIZE: DEFAULT_QUEUE_MAX_SIZE,
+            CONF_EXCLUDE_DOMAINS: "automation, sun",
+            CONF_EXCLUDE_ENTITIES: "",
+            CONF_EXCLUDE_ATTRIBUTES: "icon",
+        },
+    )
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_EXCLUDE_DOMAINS] == ["automation", "sun"]
+    assert entry.options[CONF_EXCLUDE_ENTITIES] == []
+    assert entry.options[CONF_EXCLUDE_ATTRIBUTES] == ["icon"]
+
+
+async def test_options_flow_prefills_filters_from_data(hass: HomeAssistant) -> None:
+    """Filters set at setup time appear pre-filled in the options form."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_DB_TYPE: DB_TYPE_SQLITE,
+            CONF_DB_PATH: DEFAULT_DB_PATH,
+            CONF_EXCLUDE_DOMAINS: ["sun"],
+            CONF_EXCLUDE_ENTITIES: [],
+            CONF_EXCLUDE_ATTRIBUTES: ["icon"],
+        },
+        options={},
+    )
+    entry.add_to_hass(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    schema = result["data_schema"].schema
+    defaults = {k.schema: k.default() for k in schema}
+    assert "sun" in defaults[CONF_EXCLUDE_DOMAINS]
+    assert "icon" in defaults[CONF_EXCLUDE_ATTRIBUTES]
+
+
+async def test_options_filter_overrides_data_filter(hass: HomeAssistant) -> None:
+    """Options-level filter takes precedence over setup-time data filter."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_DB_TYPE: DB_TYPE_SQLITE,
+            CONF_DB_PATH: DEFAULT_DB_PATH,
+            CONF_EXCLUDE_DOMAINS: ["sun"],
+            CONF_EXCLUDE_ENTITIES: [],
+            CONF_EXCLUDE_ATTRIBUTES: [],
+        },
+        options={
+            CONF_FLUSH_INTERVAL: DEFAULT_FLUSH_INTERVAL,
+            CONF_QUEUE_MAX_SIZE: DEFAULT_QUEUE_MAX_SIZE,
+            CONF_EXCLUDE_DOMAINS: ["automation"],  # overrides data
+            CONF_EXCLUDE_ENTITIES: [],
+            CONF_EXCLUDE_ATTRIBUTES: [],
+        },
+    )
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.ha_logger_ext.create_backend") as mock_factory:
+        from unittest.mock import AsyncMock
+        import uuid
+        backend = AsyncMock()
+        backend.get_latest_observation.return_value = None
+        backend.get_or_create_entity.return_value = uuid.uuid4()
+        mock_factory.return_value = backend
+
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    coordinator = entry.runtime_data
+    # options says exclude automation, not sun
+    assert not coordinator._should_track_entity("automation.test")
+    assert coordinator._should_track_entity("sun.sun")
+
+
 # ---------------------------------------------------------------------------
 # Reconfigure flow
 # SOURCE_RECONFIGURE was introduced in HA 2024.x; skip gracefully on older

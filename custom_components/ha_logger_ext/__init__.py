@@ -84,14 +84,16 @@ class LoggerCoordinator:
         self._unsub_states: Any = None
         self._unsub_stop: Any = None
 
+        # Options take precedence over data so filters can be updated via
+        # the options flow without re-adding the integration.
         self._exclude_domains: frozenset[str] = frozenset(
-            data.get(CONF_EXCLUDE_DOMAINS, [])
+            opts.get(CONF_EXCLUDE_DOMAINS, data.get(CONF_EXCLUDE_DOMAINS, []))
         )
         self._exclude_entities: frozenset[str] = frozenset(
-            data.get(CONF_EXCLUDE_ENTITIES, [])
+            opts.get(CONF_EXCLUDE_ENTITIES, data.get(CONF_EXCLUDE_ENTITIES, []))
         )
         self._exclude_attributes: frozenset[str] = frozenset(
-            data.get(CONF_EXCLUDE_ATTRIBUTES, [])
+            opts.get(CONF_EXCLUDE_ATTRIBUTES, data.get(CONF_EXCLUDE_ATTRIBUTES, []))
         )
 
     # ------------------------------------------------------------------
