@@ -25,7 +25,7 @@ Home Assistant's built-in recorder stores raw events. This integration stores **
 | Field | Description | Default |
 |---|---|---|
 | Database type | `sqlite` (MySQL/PostgreSQL coming later) | `sqlite` |
-| Database file path | Path to the SQLite file, relative to the HA config directory | `ha_logger_ext.db` |
+| Database file path | Path to the SQLite file, relative to the HA config directory | `ha_logger_ext/ha_logger_ext.db` |
 | Exclude domains | Comma-separated domains to skip (e.g. `automation,sun`) | empty |
 | Exclude entities | Comma-separated entity IDs to skip | empty |
 | Exclude attributes | Comma-separated attribute names to never log | empty |
@@ -141,7 +141,6 @@ Tests use `pytest-homeassistant-custom-component` and do not require a running H
 ## Known limitations
 
 - Only SQLite is supported currently. MySQL and PostgreSQL backends are planned.
-- Filter configuration (exclude domains/entities/attributes) is set at integration setup and requires re-adding the integration to change.
 - No data retention policy yet — the database grows indefinitely.
 - No export tooling yet — query the SQLite file directly with any SQL client.
 
@@ -150,7 +149,7 @@ Tests use `pytest-homeassistant-custom-component` and do not require a running H
 1. Go to **Settings → Devices & Services → HA Logger Extended**.
 2. Click the three-dot menu → **Delete**.
 3. Restart Home Assistant.
-4. Optionally delete the database file from your HA config directory (default: `ha_logger_ext.db`).
+4. Optionally delete the database directory from your HA config directory (default: `ha_logger_ext/`).
 
 ## Contributing
 
