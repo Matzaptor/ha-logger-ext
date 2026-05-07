@@ -7,7 +7,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
+## [1.1.0] — 2026-05-07
 
 ### Added
 
@@ -28,6 +28,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Both sensors update in push mode via a coordinator listener mechanism (no polling)
 - Integration's own entities are auto-excluded from being logged by the coordinator
 - 11 new tests for binary sensors (141 total)
+
+---
+
+## [Unreleased]
 
 ---
 
@@ -122,6 +126,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - GitHub Actions CI matrix: Python 3.12, 3.13, 3.14
 - 59 automated tests covering config flow, serialization, storage, deduplication, migrations, lifecycle, filters, and graceful shutdown
 
-[Unreleased]: https://github.com/Matzaptor/ha-logger-ext/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Matzaptor/ha-logger-ext/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/Matzaptor/ha-logger-ext/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/Matzaptor/ha-logger-ext/compare/v0.3.0...v1.0.0
+[0.3.0]: https://github.com/Matzaptor/ha-logger-ext/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Matzaptor/ha-logger-ext/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Matzaptor/ha-logger-ext/releases/tag/v0.1.0
