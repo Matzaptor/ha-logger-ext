@@ -1,11 +1,16 @@
 {
   "domain": "ha_logger_ext",
   "name": "HA Logger Extended",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "config_flow": true,
   "documentation": "https://github.com/Matzaptor/ha-logger-ext",
   "issue_tracker": "https://github.com/Matzaptor/ha-logger-ext/issues",
-  "requirements": ["aiosqlite>=0.19.0"],
+  "requirements": [
+    "aiosqlite>=0.19.0",
+    "duckdb>=0.10.0",
+    "aiomysql>=0.2.0",
+    "asyncpg>=0.29.0"
+  ],
   "dependencies": [],
   "codeowners": ["@Matzaptor"],
   "iot_class": "local_push",

@@ -2,18 +2,50 @@
   "config": {
     "step": {
       "user": {
-        "title": "Configure HA Logger Extended",
-        "description": "Set up the extended logging integration for ML datasets.",
+        "title": "Choose Database Backend",
+        "description": "Select the database engine to store entity observations.",
         "data": {
-          "db_type": "Database type",
+          "db_type": "Database type"
+        },
+        "data_description": {
+          "db_type": "SQLite and DuckDB are embedded (no server needed). MySQL and PostgreSQL require a running server."
+        }
+      },
+      "embedded": {
+        "title": "Embedded Database Settings",
+        "description": "Configure the local database file path and optional filters.",
+        "data": {
           "db_path": "Database file path (relative to HA config directory)",
           "exclude_domains": "Exclude domains (comma-separated, e.g. automation,sun)",
           "exclude_entities": "Exclude entities (comma-separated entity IDs)",
           "exclude_attributes": "Exclude attributes (comma-separated attribute names)"
         },
         "data_description": {
-          "db_type": "Select the database backend.",
-          "db_path": "Path to the SQLite database file.",
+          "db_path": "Path to the database file. Created automatically if it does not exist.",
+          "exclude_domains": "Domains whose entities will not be logged.",
+          "exclude_entities": "Specific entity IDs that will not be logged.",
+          "exclude_attributes": "Attribute names that will never be logged for any entity."
+        }
+      },
+      "server": {
+        "title": "Database Server Settings",
+        "description": "Configure the server connection and optional filters.",
+        "data": {
+          "db_host": "Host",
+          "db_port": "Port",
+          "db_name": "Database name",
+          "db_username": "Username",
+          "db_password": "Password",
+          "exclude_domains": "Exclude domains (comma-separated, e.g. automation,sun)",
+          "exclude_entities": "Exclude entities (comma-separated entity IDs)",
+          "exclude_attributes": "Exclude attributes (comma-separated attribute names)"
+        },
+        "data_description": {
+          "db_host": "Hostname or IP address of the database server.",
+          "db_port": "TCP port (default: 3306 for MySQL, 5432 for PostgreSQL).",
+          "db_name": "Name of the database / schema to use.",
+          "db_username": "Database user with CREATE TABLE and INSERT privileges.",
+          "db_password": "Password for the database user.",
           "exclude_domains": "Domains whose entities will not be logged.",
           "exclude_entities": "Specific entity IDs that will not be logged.",
           "exclude_attributes": "Attribute names that will never be logged for any entity."
@@ -23,8 +55,12 @@
         "title": "Reconfigure HA Logger Extended",
         "description": "Update the database connection and filter settings. The integration will reload automatically.",
         "data": {
-          "db_type": "Database type",
           "db_path": "Database file path",
+          "db_host": "Host",
+          "db_port": "Port",
+          "db_name": "Database name",
+          "db_username": "Username",
+          "db_password": "Password",
           "exclude_domains": "Exclude domains (comma-separated)",
           "exclude_entities": "Exclude entities (comma-separated)",
           "exclude_attributes": "Exclude attributes (comma-separated)"
@@ -36,7 +72,7 @@
       "reconfigure_successful": "Re-configuration was successful."
     },
     "error": {
-      "cannot_connect": "Unable to initialize the database."
+      "cannot_connect": "Unable to connect to the database. Check the settings and try again."
     }
   },
   "options": {
