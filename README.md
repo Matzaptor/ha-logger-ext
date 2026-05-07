@@ -10,13 +10,22 @@ Home Assistant's built-in recorder stores raw events. This integration stores **
 
 ## Installation
 
-1. Copy `custom_components/ha_logger_ext/` into your Home Assistant `custom_components/` directory.
-2. Restart Home Assistant.
-3. Click the button below or go to **Settings → Devices & Services → Add Integration** and search for **HA Logger Extended**.
+### Via HACS (recommended)
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Matzaptor&repository=ha-logger-ext&category=integration)
+
+1. Click the button above to add this repository to HACS.
+2. Install **HA Logger Extended** from HACS.
+3. Restart Home Assistant.
+4. Click the button below to open the setup wizard.
 
 [![Add to My Home Assistant](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start?domain=ha_logger_ext)
 
-> The button above only works after the files are already in `custom_components/`. It opens the setup wizard directly in your Home Assistant instance.
+### Manual
+
+1. Copy `custom_components/ha_logger_ext/` into your Home Assistant `custom_components/` directory.
+2. Restart Home Assistant.
+3. Go to **Settings → Devices & Services → Add Integration** and search for **HA Logger Extended**.
 
 ## Configuration
 
