@@ -6,7 +6,9 @@ from pathlib import Path
 
 import pytest
 
+from custom_components.ha_logger_ext.const import DB_TYPE_SQLITE, DEFAULT_DB_PATH
 from custom_components.ha_logger_ext.storage.base import ObservationRecord
+from custom_components.ha_logger_ext.storage.factory import create_backend
 from custom_components.ha_logger_ext.storage.serialization import serialize, values_equal
 from custom_components.ha_logger_ext.storage.sqlite import SQLiteBackend, _SCHEMA_VERSION
 from custom_components.ha_logger_ext.storage.uuid7 import uuid7
@@ -309,5 +311,39 @@ class TestBatchTransactions:
 
         latest = await b.get_latest_observation(pk, "state")
         assert latest is None
+
+
+class TestCreateBackend:
+    def test_default_path_uses_dedicated_subdirectory(self, tmp_path: Path) -> None:
+        backend = create_backend(
+            {DB_TYPE_SQLITE: "sqlite"},
+            config_dir=str(tmp_path),
+        )
+        expected = tmp_path / DEFAULT_DB_PATH
+        assert backend._db_path == expected
+
+    def test_creates_parent_directory_for_default_path(self, tmp_path: Path) -> None:
+        create_backend({"db_type": DB_TYPE_SQLITE}, config_dir=str(tmp_path))
+        expected_dir = (tmp_path / DEFAULT_DB_PATH).parent
+        assert expected_dir.is_dir()
+
+    def test_creates_parent_directory_for_nested_custom_path(self, tmp_path: Path) -> None:
+        create_backend(
+            {"db_type": DB_TYPE_SQLITE, "db_path": "subdir/nested/custom.db"},
+            config_dir=str(tmp_path),
+        )
+        assert (tmp_path / "subdir" / "nested").is_dir()
+
+    def test_absolute_path_creates_parent_directory(self, tmp_path: Path) -> None:
+        abs_db = tmp_path / "abs" / "data.db"
+        create_backend(
+            {"db_type": DB_TYPE_SQLITE, "db_path": str(abs_db)},
+            config_dir="/irrelevant",
+        )
+        assert abs_db.parent.is_dir()
+
+    def test_returns_sqlite_backend_instance(self, tmp_path: Path) -> None:
+        backend = create_backend({"db_type": DB_TYPE_SQLITE}, config_dir=str(tmp_path))
+        assert isinstance(backend, SQLiteBackend)
 
         await b.close()
