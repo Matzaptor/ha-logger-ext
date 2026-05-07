@@ -101,6 +101,15 @@ INSERT INTO observations (
 
 _SQL_UPDATE_OBS_LAST_SEEN = "UPDATE observations SET last_seen = ? WHERE id = ?"
 
+# Two intervals [A,B] and [C,D] overlap when A <= D AND B >= C.
+_SQL_HAS_OBS_IN_RANGE = """
+SELECT 1 FROM observations
+WHERE entity_pk = ? AND field = ?
+  AND first_seen <= ?
+  AND last_seen  >= ?
+LIMIT 1
+"""
+
 
 # Maps target schema version → async migration coroutine.
 # Each function receives an open aiosqlite.Connection and must not commit.
@@ -285,6 +294,21 @@ class SQLiteBackend(StorageBackend):
             _SQL_UPDATE_OBS_LAST_SEEN, (_fmt(ts), _to_blob(obs_id))
         )
         await self._maybe_commit()
+
+    async def has_observations_in_range(
+        self,
+        entity_pk: uuid.UUID,
+        field_name: str,
+        start: datetime,
+        end: datetime,
+    ) -> bool:
+        assert self._conn is not None
+        async with self._conn.execute(
+            _SQL_HAS_OBS_IN_RANGE,
+            (_to_blob(entity_pk), field_name, _fmt(end), _fmt(start)),
+        ) as cur:
+            row = await cur.fetchone()
+        return row is not None
 
 
 def _row_to_record(row: aiosqlite.Row) -> ObservationRecord:

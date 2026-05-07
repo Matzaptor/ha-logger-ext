@@ -391,11 +391,15 @@ The default behavior must be local-first and privacy-respecting.
 
 26. tests for new backends and updated config flow (110 tests total)
 27. version bumped to 1.0.0
+28. `import_from_recorder` HA service (`services.yaml`, `importer.py`, registered in `__init__.py`):
+    7-day sliding window chunks; RLE-compresses consecutive equal values into validity intervals;
+    idempotent and resumable via `has_observations_in_range` skip logic; attributes tracked
+    per-field; `_fetch_states` overrideable for testing; 20 new tests (130 total)
 
 ### Next
 
-28. data retention policy
-29. export tooling
+29. data retention policy
+30. export tooling
 
 ### Permanent constraints
 

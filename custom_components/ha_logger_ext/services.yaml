@@ -1,0 +1,37 @@
+import_from_recorder:
+  name: Import from Recorder
+  description: >
+    Import historical entity states from the Home Assistant Recorder database
+    into ha_logger_ext. Only time ranges with no existing data are imported,
+    so the service is safe to run multiple times (idempotent and resumable).
+    Progress is logged at INFO level. The import runs in the background.
+  fields:
+    start_date:
+      name: Start date
+      description: >
+        Earliest date to import (ISO 8601, e.g. "2022-01-01").
+        Defaults to two years before today.
+      required: false
+      example: "2022-01-01"
+      selector:
+        text:
+    end_date:
+      name: End date
+      description: >
+        Latest date to import (ISO 8601, e.g. "2024-12-31").
+        Defaults to today.
+      required: false
+      example: "2024-12-31"
+      selector:
+        text:
+    entity_ids:
+      name: Entity IDs
+      description: >
+        Entity IDs to import. Leave empty to import all entities.
+      required: false
+      example:
+        - sensor.temperature
+        - sensor.humidity
+      selector:
+        entity:
+          multiple: true

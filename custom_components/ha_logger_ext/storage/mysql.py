@@ -96,6 +96,14 @@ INSERT INTO observations (
 
 _SQL_UPDATE_OBS_LAST_SEEN = "UPDATE observations SET last_seen = %s WHERE id = %s"
 
+_SQL_HAS_OBS_IN_RANGE = """
+SELECT 1 FROM observations
+WHERE entity_pk = %s AND field = %s
+  AND first_seen <= %s
+  AND last_seen  >= %s
+LIMIT 1
+"""
+
 # Maps target schema version → async migration coroutine.
 # Each function receives an open aiomysql.Connection and must not commit.
 _MigrationFn = Callable[[aiomysql.Connection], Awaitable[None]]
@@ -348,6 +356,19 @@ class MySQLBackend(StorageBackend):
         await self._execute(
             _SQL_UPDATE_OBS_LAST_SEEN, (_fmt(ts), _to_blob(obs_id))
         )
+
+    async def has_observations_in_range(
+        self,
+        entity_pk: uuid.UUID,
+        field_name: str,
+        start: datetime,
+        end: datetime,
+    ) -> bool:
+        row = await self._fetchone(
+            _SQL_HAS_OBS_IN_RANGE,
+            (_to_blob(entity_pk), field_name, _fmt(end), _fmt(start)),
+        )
+        return row is not None
 
 
 def _row_to_record(row: tuple) -> ObservationRecord:

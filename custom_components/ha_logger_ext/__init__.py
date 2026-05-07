@@ -4,13 +4,16 @@ import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
+
+import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP, EVENT_STATE_CHANGED
-from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.core import Event, HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import config_validation as cv
 
 from .const import (
     CONF_EXCLUDE_ATTRIBUTES,
@@ -21,11 +24,20 @@ from .const import (
     DEFAULT_FLUSH_INTERVAL,
     DEFAULT_QUEUE_MAX_SIZE,
     DOMAIN,
+    SERVICE_IMPORT_FROM_RECORDER,
 )
 from .storage.base import ObservationRecord, StorageBackend
 from .storage.factory import create_backend
 from .storage.serialization import serialize, values_equal
 from .storage.uuid7 import uuid7
+
+_SERVICE_IMPORT_SCHEMA = vol.Schema(
+    {
+        vol.Optional("start_date"): cv.string,
+        vol.Optional("end_date"): cv.string,
+        vol.Optional("entity_ids"): vol.All(cv.ensure_list, [cv.entity_id]),
+    }
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,6 +61,39 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coordinator.start()
     entry.runtime_data = coordinator
     entry.async_on_unload(entry.add_update_listener(_async_reload_on_options_change))
+
+    async def _handle_import(call: ServiceCall) -> None:
+        from .importer import RecorderImporter
+
+        now = datetime.now(timezone.utc)
+        raw_start: str | None = call.data.get("start_date")
+        raw_end: str | None = call.data.get("end_date")
+        entity_ids: list[str] | None = call.data.get("entity_ids")
+
+        start_time = (
+            datetime.fromisoformat(raw_start).replace(tzinfo=timezone.utc)
+            if raw_start
+            else now - timedelta(days=730)
+        )
+        end_time = (
+            datetime.fromisoformat(raw_end).replace(tzinfo=timezone.utc)
+            if raw_end
+            else now
+        )
+
+        importer = RecorderImporter(hass, coordinator.backend)
+        hass.async_create_task(importer.run(start_time, end_time, entity_ids or None))
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_IMPORT_FROM_RECORDER,
+        _handle_import,
+        schema=_SERVICE_IMPORT_SCHEMA,
+    )
+    entry.async_on_unload(
+        lambda: hass.services.async_remove(DOMAIN, SERVICE_IMPORT_FROM_RECORDER)
+    )
+
     return True
 
 
@@ -101,6 +146,10 @@ class LoggerCoordinator:
     # ------------------------------------------------------------------
     # Public interface
     # ------------------------------------------------------------------
+
+    @property
+    def backend(self) -> StorageBackend:
+        return self._backend
 
     @property
     def queue_size(self) -> int:
