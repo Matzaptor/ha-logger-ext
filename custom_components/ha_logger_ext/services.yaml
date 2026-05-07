@@ -9,7 +9,8 @@ import_from_recorder:
     start_date:
       name: Start date
       description: >
-        Earliest date to import. Defaults to two years before today.
+        Earliest date to import. Defaults to the oldest state available in the
+        Recorder database.
       required: false
       example: "2022-01-01"
       selector:

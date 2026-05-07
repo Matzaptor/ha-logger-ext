@@ -17,11 +17,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Idempotent: existing observations detected via `has_observations_in_range` and skipped
   - Resumable: re-running after a crash skips already-imported time ranges and continues from the first gap
   - Attributes tracked per-field alongside state
-  - Parameters: `start_date`, `end_date`, `entity_ids` (all optional)
+  - Parameters: `start_date` (defaults to oldest recorder state), `end_date` (defaults to now), `entity_ids` (all optional)
   - Progress logged at INFO level
 - `has_observations_in_range(entity_pk, field_name, start, end) -> bool` on `StorageBackend` ABC, implemented in all four backends (SQLite, DuckDB, MySQL, PostgreSQL)
 - `services.yaml` with full field descriptions for the HA Developer tools UI
-- 20 new tests: RLE unit tests, integration tests with real SQLite backend and mocked recorder, overlap detection
+- 22 new tests: RLE unit tests, integration tests with real SQLite backend and mocked recorder, overlap detection, `None` start time handling
 - Two `binary_sensor` entities exposed per config entry:
   - **Recording** (`mdi:database-clock`): `on` while the coordinator flush loop is running; attributes: `queue_size`, `last_flush`, `flush_interval_seconds`
   - **Import in progress** (`mdi:database-import`): `on` while `import_from_recorder` is running; attribute `last_import_intervals_inserted` available after completion

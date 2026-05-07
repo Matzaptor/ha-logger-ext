@@ -4,7 +4,7 @@ import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, ClassVar
 
 import voluptuous as vol
@@ -72,10 +72,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raw_end: str | None = call.data.get("end_date")
         entity_ids: list[str] | None = call.data.get("entity_ids")
 
-        start_time = (
+        start_time: datetime | None = (
             datetime.fromisoformat(raw_start).replace(tzinfo=timezone.utc)
             if raw_start
-            else now - timedelta(days=730)
+            else None
         )
         end_time = (
             datetime.fromisoformat(raw_end).replace(tzinfo=timezone.utc)

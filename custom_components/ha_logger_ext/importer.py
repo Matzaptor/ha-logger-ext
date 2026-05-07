@@ -71,6 +71,31 @@ class RecorderImporter:
         self._hass = hass
         self._backend = backend
 
+    async def _fetch_earliest_state_time(self) -> datetime | None:
+        """Return the oldest state timestamp from the recorder, or None if unavailable.
+
+        Subclass or patch this method in tests to avoid a real recorder dependency.
+        """
+        try:
+            from homeassistant.components.recorder import get_instance
+            from homeassistant.components.recorder.db_schema import States
+            from sqlalchemy import func, select
+        except ImportError:
+            return None
+
+        recorder = get_instance(self._hass)
+
+        def _query() -> float | None:
+            with recorder.get_session() as session:
+                return session.execute(
+                    select(func.min(States.last_updated_ts))
+                ).scalar()
+
+        result: float | None = await recorder.async_add_executor_job(_query)
+        if result is None:
+            return None
+        return datetime.fromtimestamp(float(result), tz=timezone.utc)
+
     async def _fetch_states(
         self,
         start: datetime,
@@ -102,11 +127,17 @@ class RecorderImporter:
 
     async def run(
         self,
-        start_time: datetime,
+        start_time: datetime | None,
         end_time: datetime,
         entity_ids: list[str] | None = None,
     ) -> int:
         """Run the import. Returns the total number of intervals inserted."""
+        if start_time is None:
+            start_time = await self._fetch_earliest_state_time()
+            if start_time is None:
+                _LOGGER.info("import_from_recorder: recorder has no states, nothing to import")
+                return 0
+
         total = 0
         chunk_start = start_time
         while chunk_start < end_time:

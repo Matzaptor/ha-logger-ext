@@ -123,9 +123,11 @@ class _FakeImporter(RecorderImporter):
         hass: Any,
         backend: SQLiteBackend,
         states_map: dict[str, list[Any]],
+        earliest: datetime | None = None,
     ) -> None:
         super().__init__(hass, backend)
         self._states_map = states_map
+        self._earliest = earliest
 
     async def _fetch_states(
         self,
@@ -134,6 +136,9 @@ class _FakeImporter(RecorderImporter):
         entity_ids: list[str] | None,
     ) -> dict[str, list[Any]]:
         return self._states_map
+
+    async def _fetch_earliest_state_time(self) -> datetime | None:
+        return self._earliest
 
 
 class TestRecorderImporter:
@@ -202,6 +207,21 @@ class TestRecorderImporter:
         hass = MagicMock()
         importer = _FakeImporter(hass, backend, {})
         inserted = await importer.run(TS0, TS1)
+        assert inserted == 0
+
+    async def test_none_start_uses_earliest_recorder_state(self, backend: SQLiteBackend) -> None:
+        states = [_state("sensor.temp", "20", TS0)]
+        hass = MagicMock()
+        importer = _FakeImporter(hass, backend, {"sensor.temp": states}, earliest=TS0)
+        inserted = await importer.run(None, TS1)
+        assert inserted == 1
+
+    async def test_none_start_with_empty_recorder_returns_zero(
+        self, backend: SQLiteBackend
+    ) -> None:
+        hass = MagicMock()
+        importer = _FakeImporter(hass, backend, {}, earliest=None)
+        inserted = await importer.run(None, TS1)
         assert inserted == 0
 
 
