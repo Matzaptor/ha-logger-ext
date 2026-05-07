@@ -370,6 +370,7 @@ class TestBatchTransactions:
 
         latest = await b.get_latest_observation(pk, "state")
         assert latest is None
+        await b.close()
 
 
 class TestCreateBackend:
@@ -404,3 +405,61 @@ class TestCreateBackend:
     def test_returns_sqlite_backend_instance(self, tmp_path: Path) -> None:
         backend = create_backend({"db_type": DB_TYPE_SQLITE}, config_dir=str(tmp_path))
         assert isinstance(backend, SQLiteBackend)
+
+    def test_unknown_db_type_raises_value_error(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="Unknown database type"):
+            create_backend({"db_type": "oracle"}, config_dir=str(tmp_path))
+
+    def test_mysql_raises_not_implemented(self, tmp_path: Path) -> None:
+        with pytest.raises(NotImplementedError):
+            create_backend({"db_type": "mysql"}, config_dir=str(tmp_path))
+
+    def test_postgresql_raises_not_implemented(self, tmp_path: Path) -> None:
+        with pytest.raises(NotImplementedError):
+            create_backend({"db_type": "postgresql"}, config_dir=str(tmp_path))
+
+
+class TestSQLiteBackendEdgeCases:
+    async def test_close_before_initialize_is_safe(self, tmp_path: Path) -> None:
+        b = SQLiteBackend(tmp_path / "test.db")
+        await b.close()  # must not raise
+
+    async def test_initialize_is_idempotent(self, tmp_path: Path) -> None:
+        b = SQLiteBackend(tmp_path / "test.db")
+        await b.initialize()
+        await b.initialize()  # second call must not raise or corrupt schema
+        pk = await b.get_or_create_entity("sensor.temp", "sensor", TS)
+        assert pk is not None
+        await b.close()
+
+    async def test_schema_already_at_current_version(self, tmp_path: Path) -> None:
+        db_file = tmp_path / "test.db"
+        b = SQLiteBackend(db_file)
+        await b.initialize()
+        await b.close()
+
+        # Re-open — schema already at _SCHEMA_VERSION; no migration should run.
+        b2 = SQLiteBackend(db_file)
+        await b2.initialize()
+        pk = await b2.get_or_create_entity("sensor.temp", "sensor", TS)
+        assert pk is not None
+        await b2.close()
+
+    async def test_schema_newer_than_integration_raises_runtime_error(
+        self, tmp_path: Path
+    ) -> None:
+        db_file = tmp_path / "test.db"
+        async with aiosqlite.connect(db_file) as db:
+            await db.execute(
+                "CREATE TABLE schema_version (version INTEGER NOT NULL)"
+            )
+            # Claim a future version that the integration doesn't know about.
+            await db.execute("INSERT INTO schema_version VALUES (999)")
+            await db.commit()
+
+        b = SQLiteBackend(db_file)
+        try:
+            with pytest.raises(RuntimeError, match="newer than integration"):
+                await b.initialize()
+        finally:
+            await b.close()

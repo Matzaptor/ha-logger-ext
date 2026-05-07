@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -81,8 +82,8 @@ class LoggerCoordinator:
 
         self._queue: asyncio.Queue[_StateSnapshot] = asyncio.Queue(maxsize=queue_max)
         self._flush_task: asyncio.Task | None = None
-        self._unsub_states: Any = None
-        self._unsub_stop: Any = None
+        self._unsub_states: Callable[[], None] | None = None
+        self._unsub_stop: Callable[[], None] | None = None
         self._last_flush: datetime | None = None
 
         # Options take precedence over data so filters can be updated via

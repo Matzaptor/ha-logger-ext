@@ -14,6 +14,8 @@ from custom_components.ha_logger_ext.const import (
     CONF_EXCLUDE_ATTRIBUTES,
     CONF_EXCLUDE_DOMAINS,
     CONF_EXCLUDE_ENTITIES,
+    CONF_FLUSH_INTERVAL,
+    CONF_QUEUE_MAX_SIZE,
     DB_TYPE_SQLITE,
     DOMAIN,
 )
@@ -197,3 +199,99 @@ class TestEntityFilters:
         # Nothing should land in the queue for sun.sun
         coordinator = entry.runtime_data
         assert coordinator.queue_size == 0
+
+
+class TestQueueBehavior:
+    async def test_queue_full_during_start_drops_snapshot(
+        self, hass: HomeAssistant, patched_factory
+    ) -> None:
+        """When the queue fills up during initial snapshot, extras are silently dropped."""
+        hass.states.async_set("sensor.a", "1")
+        hass.states.async_set("sensor.b", "2")
+        hass.states.async_set("sensor.c", "3")
+        await hass.async_block_till_done()
+
+        # Queue max size of 1 forces overflow during start().
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_DB_TYPE: DB_TYPE_SQLITE,
+                CONF_DB_PATH: "test.db",
+                CONF_EXCLUDE_DOMAINS: [],
+                CONF_EXCLUDE_ENTITIES: [],
+                CONF_EXCLUDE_ATTRIBUTES: [],
+            },
+            options={CONF_FLUSH_INTERVAL: 30, CONF_QUEUE_MAX_SIZE: 1},
+        )
+        entry.add_to_hass(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = entry.runtime_data
+        # Queue may hold at most 1 item; the rest were dropped without raising.
+        assert coordinator.queue_size <= 1
+        assert coordinator.is_running
+
+    async def test_queue_full_on_state_change_drops_event(
+        self, hass: HomeAssistant
+    ) -> None:
+        """State-change events are dropped (not raised) when the queue is full."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_DB_TYPE: DB_TYPE_SQLITE,
+                CONF_DB_PATH: "test.db",
+                CONF_EXCLUDE_DOMAINS: [],
+                CONF_EXCLUDE_ENTITIES: [],
+                CONF_EXCLUDE_ATTRIBUTES: [],
+            },
+            options={CONF_FLUSH_INTERVAL: 300, CONF_QUEUE_MAX_SIZE: 1},
+        )
+        entry.add_to_hass(hass)
+
+        with patch(
+            "custom_components.ha_logger_ext.create_backend",
+            return_value=_mock_backend(),
+        ):
+            assert await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+
+            coordinator = entry.runtime_data
+            # Fill the queue completely.
+            from custom_components.ha_logger_ext import _StateSnapshot
+            while not coordinator._queue.full():
+                coordinator._queue.put_nowait(
+                    _StateSnapshot("sensor.x", "1", {}, datetime.now(timezone.utc))
+                )
+
+            # This state change must not raise despite a full queue.
+            hass.states.async_set("sensor.extra", "42")
+            await hass.async_block_till_done()
+
+
+class TestFlushRollback:
+    async def test_flush_rollback_on_commit_failure(
+        self, hass: HomeAssistant
+    ) -> None:
+        """When commit raises, rollback is called and the coordinator stays running."""
+        backend = _mock_backend()
+        backend.commit.side_effect = OSError("disk full")
+
+        entry = _make_entry(hass)
+
+        with patch(
+            "custom_components.ha_logger_ext.create_backend",
+            return_value=backend,
+        ):
+            assert await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+
+            coordinator = entry.runtime_data
+            from custom_components.ha_logger_ext import _StateSnapshot
+            coordinator._queue.put_nowait(
+                _StateSnapshot("sensor.t", "1", {}, datetime.now(timezone.utc))
+            )
+            await coordinator._flush()
+
+        backend.rollback.assert_called_once()
+        assert coordinator.is_running

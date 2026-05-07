@@ -306,3 +306,70 @@ async def test_reconfigure_updates_and_reloads(hass: HomeAssistant) -> None:
     assert result["reason"] == "reconfigure_successful"
     assert entry.data[CONF_DB_PATH] == "new_path.db"
     assert entry.data[CONF_EXCLUDE_DOMAINS] == ["sun"]
+
+
+# ---------------------------------------------------------------------------
+# Config flow — DB validation (exception-translations)
+# ---------------------------------------------------------------------------
+
+async def test_user_step_shows_error_on_db_failure(hass: HomeAssistant) -> None:
+    """cannot_connect error is shown when the backend fails to initialise."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    with patch(
+        "custom_components.ha_logger_ext.config_flow._test_backend",
+        return_value="cannot_connect",
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={CONF_DB_TYPE: DB_TYPE_SQLITE, CONF_DB_PATH: DEFAULT_DB_PATH},
+        )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["errors"] == {"base": "cannot_connect"}
+
+
+async def test_user_step_creates_entry_after_db_success(hass: HomeAssistant) -> None:
+    """Entry is created when backend initialises successfully."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    with patch(
+        "custom_components.ha_logger_ext.config_flow._test_backend",
+        return_value=None,
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={CONF_DB_TYPE: DB_TYPE_SQLITE, CONF_DB_PATH: DEFAULT_DB_PATH},
+        )
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+
+
+# ---------------------------------------------------------------------------
+# Options flow — range validation
+# ---------------------------------------------------------------------------
+
+async def test_options_flow_rejects_flush_interval_below_minimum(
+    hass: HomeAssistant,
+) -> None:
+    entry = _entry_with_options(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    with pytest.raises(Exception):
+        await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            user_input={CONF_FLUSH_INTERVAL: 1, CONF_QUEUE_MAX_SIZE: DEFAULT_QUEUE_MAX_SIZE},
+        )
+
+
+async def test_options_flow_rejects_queue_size_above_maximum(
+    hass: HomeAssistant,
+) -> None:
+    entry = _entry_with_options(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    with pytest.raises(Exception):
+        await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            user_input={CONF_FLUSH_INTERVAL: DEFAULT_FLUSH_INTERVAL, CONF_QUEUE_MAX_SIZE: 999_999},
+        )

@@ -373,18 +373,18 @@ The default behavior must be local-first and privacy-respecting.
 8. deduplication logic (validity-range semantics, 10 typed value columns)
 9. buffered async queue with periodic flush
 10. initial test suite (44 tests: config flow, serialization, storage, dedup)
-
-### Next
-
 11. batch DB transactions (single transaction per flush, not per operation)
 12. `EVENT_HOMEASSISTANT_STOP` listener for graceful shutdown flush
 13. entity and attribute filter config (include/exclude domain/entity_id/attribute)
 14. flush interval and batch size configurable via config entry options
 15. schema migration system (`schema_version` table)
 16. `diagnostics.py` (coordinator state, queue depth, last flush)
-17. `quality_scale.yaml`
-18. expanded test coverage (lifecycle, shutdown, filters, migration)
-19. documentation (README: install, config, schema, dedup semantics)
+17. `quality_scale.yaml` (Bronze/Silver/Gold; Gold items `exception-translations` and `strict-typing` marked done)
+18. expanded test coverage (94 tests: factory error paths, backend edge cases, queue overflow, flush rollback, coordinator lifecycle)
+19. documentation (README: diagnostics section, options filter table, deduplication semantics)
+
+### Next
+
 20. optional MySQL/PostgreSQL backend
 
 ### Permanent constraints
