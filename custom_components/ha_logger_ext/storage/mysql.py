@@ -1,0 +1,369 @@
+from __future__ import annotations
+
+import logging
+import uuid
+from collections.abc import Awaitable, Callable
+from datetime import datetime, timezone
+
+import aiomysql
+
+from .base import ObservationRecord, StorageBackend
+
+_LOGGER = logging.getLogger(__name__)
+
+_SCHEMA_VERSION = 1
+
+_SQL_CREATE_SCHEMA_VERSION = """
+CREATE TABLE IF NOT EXISTS schema_version (
+    version INTEGER NOT NULL
+)
+"""
+
+_SQL_CREATE_ENTITIES = """
+CREATE TABLE IF NOT EXISTS entities (
+    id          BINARY(16)   NOT NULL PRIMARY KEY,
+    entity_id   VARCHAR(255) NOT NULL UNIQUE,
+    domain      VARCHAR(128) NOT NULL,
+    first_seen  VARCHAR(32)  NOT NULL,
+    last_seen   VARCHAR(32)  NOT NULL
+)
+"""
+
+_SQL_CREATE_OBSERVATIONS = """
+CREATE TABLE IF NOT EXISTS observations (
+    id             BINARY(16)   NOT NULL PRIMARY KEY,
+    entity_pk      BINARY(16)   NOT NULL,
+    field          VARCHAR(255) NOT NULL,
+    value_type     VARCHAR(16)  NOT NULL,
+    value_str      TEXT,
+    value_int      BIGINT,
+    value_float    DOUBLE,
+    value_bool     TINYINT(1)   CHECK (value_bool IN (0, 1) OR value_bool IS NULL),
+    value_datetime VARCHAR(64),
+    value_date     VARCHAR(16),
+    value_time     VARCHAR(20),
+    value_json     TEXT,
+    first_seen     VARCHAR(32)  NOT NULL,
+    last_seen      VARCHAR(32)  NOT NULL,
+    CONSTRAINT fk_obs_entity FOREIGN KEY (entity_pk)
+        REFERENCES entities(id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE
+)
+"""
+
+_SQL_CREATE_INDEXES = (
+    "CREATE INDEX IF NOT EXISTS idx_obs_entity_field "
+    "ON observations(entity_pk, field(64))",
+
+    "CREATE INDEX IF NOT EXISTS idx_obs_entity_field_last "
+    "ON observations(entity_pk, field(64), last_seen DESC)",
+
+    "CREATE INDEX IF NOT EXISTS idx_obs_first_seen "
+    "ON observations(first_seen)",
+)
+
+_SQL_SELECT_SCHEMA_VERSION = "SELECT version FROM schema_version LIMIT 1"
+_SQL_INSERT_SCHEMA_VERSION = "INSERT INTO schema_version (version) VALUES (%s)"
+_SQL_UPDATE_SCHEMA_VERSION = "UPDATE schema_version SET version = %s"
+
+_SQL_SELECT_ENTITY = "SELECT id FROM entities WHERE entity_id = %s"
+_SQL_UPDATE_ENTITY_LAST_SEEN = "UPDATE entities SET last_seen = %s WHERE id = %s"
+_SQL_INSERT_ENTITY = (
+    "INSERT IGNORE INTO entities (id, entity_id, domain, first_seen, last_seen) "
+    "VALUES (%s, %s, %s, %s, %s)"
+)
+
+_SQL_SELECT_LATEST_OBS = """
+SELECT id, entity_pk, field, value_type,
+       value_str, value_int, value_float, value_bool,
+       value_datetime, value_date, value_time, value_json,
+       first_seen, last_seen
+FROM observations
+WHERE entity_pk = %s AND field = %s
+ORDER BY last_seen DESC
+LIMIT 1
+"""
+
+_SQL_INSERT_OBS = """
+INSERT INTO observations (
+    id, entity_pk, field, value_type,
+    value_str, value_int, value_float, value_bool,
+    value_datetime, value_date, value_time, value_json,
+    first_seen, last_seen
+) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+"""
+
+_SQL_UPDATE_OBS_LAST_SEEN = "UPDATE observations SET last_seen = %s WHERE id = %s"
+
+# Maps target schema version → async migration coroutine.
+# Each function receives an open aiomysql.Connection and must not commit.
+_MigrationFn = Callable[[aiomysql.Connection], Awaitable[None]]
+_MIGRATIONS: dict[int, _MigrationFn] = {}
+
+
+def _to_blob(u: uuid.UUID) -> bytes:
+    return u.bytes
+
+
+def _from_blob(b: bytes) -> uuid.UUID:
+    return uuid.UUID(bytes=b)
+
+
+def _fmt(dt: datetime) -> str:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat()
+
+
+class MySQLBackend(StorageBackend):
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        database: str,
+        username: str,
+        password: str,
+    ) -> None:
+        self._host = host
+        self._port = port
+        self._database = database
+        self._username = username
+        self._password = password
+        self._pool: aiomysql.Pool | None = None
+        # Active connection held during an explicit transaction.
+        self._conn: aiomysql.Connection | None = None
+        self._in_transaction = False
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    async def initialize(self) -> None:
+        self._pool = await aiomysql.create_pool(
+            host=self._host,
+            port=self._port,
+            db=self._database,
+            user=self._username,
+            password=self._password,
+            autocommit=False,
+            charset="utf8mb4",
+        )
+        await self._apply_migrations()
+
+    async def close(self) -> None:
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
+        if self._pool is not None:
+            self._pool.close()
+            await self._pool.wait_closed()
+            self._pool = None
+
+    # ------------------------------------------------------------------
+    # Schema migrations
+    # ------------------------------------------------------------------
+
+    async def _apply_migrations(self) -> None:
+        assert self._pool is not None
+
+        async with self._pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(_SQL_CREATE_SCHEMA_VERSION)
+                await cur.execute(_SQL_SELECT_SCHEMA_VERSION)
+                row = await cur.fetchone()
+                current: int = row[0] if row else 0
+
+                if current == 0:
+                    _LOGGER.debug(
+                        "Initializing fresh MySQL schema (version %d)", _SCHEMA_VERSION
+                    )
+                    await cur.execute(_SQL_CREATE_ENTITIES)
+                    await cur.execute(_SQL_CREATE_OBSERVATIONS)
+                    for sql in _SQL_CREATE_INDEXES:
+                        try:
+                            await cur.execute(sql)
+                        except Exception:  # index may already exist on reconnect
+                            _LOGGER.debug(
+                                "Skipping index creation (may already exist): %s", sql
+                            )
+                    await cur.execute(_SQL_INSERT_SCHEMA_VERSION, (_SCHEMA_VERSION,))
+                    await conn.commit()
+                    return
+
+                if current == _SCHEMA_VERSION:
+                    return
+
+                if current > _SCHEMA_VERSION:
+                    raise RuntimeError(
+                        f"Database schema version {current} is newer than integration "
+                        f"schema version {_SCHEMA_VERSION}. Please update the integration."
+                    )
+
+                try:
+                    for target in range(current + 1, _SCHEMA_VERSION + 1):
+                        _LOGGER.info(
+                            "Migrating MySQL schema to version %d", target
+                        )
+                        migrate = _MIGRATIONS.get(target)
+                        if migrate is None:
+                            raise NotImplementedError(
+                                f"No migration defined for schema version {target}."
+                            )
+                        await migrate(conn)
+                    await cur.execute(_SQL_UPDATE_SCHEMA_VERSION, (_SCHEMA_VERSION,))
+                    await conn.commit()
+                except Exception:
+                    await conn.rollback()
+                    raise
+
+    # ------------------------------------------------------------------
+    # Transaction control
+    # ------------------------------------------------------------------
+
+    async def begin(self) -> None:
+        assert self._pool is not None
+        self._conn = await self._pool.acquire()
+        await self._conn.begin()
+        self._in_transaction = True
+
+    async def commit(self) -> None:
+        assert self._conn is not None
+        await self._conn.commit()
+        self._conn.close()
+        self._conn = None
+        self._in_transaction = False
+
+    async def rollback(self) -> None:
+        assert self._conn is not None
+        await self._conn.rollback()
+        self._conn.close()
+        self._conn = None
+        self._in_transaction = False
+
+    # ------------------------------------------------------------------
+    # Internal connection helper
+    # ------------------------------------------------------------------
+
+    def _active_conn(self) -> aiomysql.Connection:
+        """Return the transaction connection or raise if not in a transaction."""
+        assert self._conn is not None, "No active transaction connection."
+        return self._conn
+
+    async def _execute(
+        self, sql: str, params: tuple | None = None
+    ) -> aiomysql.cursors.Cursor:
+        """Execute a statement on the active connection (transaction mode) or acquire a temporary one."""
+        if self._in_transaction:
+            conn = self._active_conn()
+            cur = await conn.cursor()
+            await cur.execute(sql, params or ())
+            return cur
+
+        assert self._pool is not None
+        conn = await self._pool.acquire()
+        try:
+            cur = await conn.cursor()
+            await cur.execute(sql, params or ())
+            await conn.commit()
+            return cur
+        finally:
+            conn.close()
+
+    async def _fetchone(
+        self, sql: str, params: tuple | None = None
+    ) -> tuple | None:
+        if self._in_transaction:
+            conn = self._active_conn()
+            async with conn.cursor() as cur:
+                await cur.execute(sql, params or ())
+                return await cur.fetchone()
+
+        assert self._pool is not None
+        async with self._pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(sql, params or ())
+                return await cur.fetchone()
+
+    # ------------------------------------------------------------------
+    # Entity management
+    # ------------------------------------------------------------------
+
+    async def get_or_create_entity(
+        self, entity_id: str, domain: str, ts: datetime
+    ) -> uuid.UUID:
+        ts_str = _fmt(ts)
+        row = await self._fetchone(_SQL_SELECT_ENTITY, (entity_id,))
+
+        if row is not None:
+            pk = _from_blob(bytes(row[0]))
+            await self._execute(_SQL_UPDATE_ENTITY_LAST_SEEN, (ts_str, _to_blob(pk)))
+            return pk
+
+        from .uuid7 import uuid7
+        pk = uuid7()
+        await self._execute(
+            _SQL_INSERT_ENTITY,
+            (_to_blob(pk), entity_id, domain, ts_str, ts_str),
+        )
+        # A race on INSERT IGNORE means another worker inserted first; fetch the winner.
+        row = await self._fetchone(_SQL_SELECT_ENTITY, (entity_id,))
+        assert row is not None
+        return _from_blob(bytes(row[0]))
+
+    # ------------------------------------------------------------------
+    # Observations
+    # ------------------------------------------------------------------
+
+    async def get_latest_observation(
+        self, entity_pk: uuid.UUID, field_name: str
+    ) -> ObservationRecord | None:
+        row = await self._fetchone(
+            _SQL_SELECT_LATEST_OBS, (_to_blob(entity_pk), field_name)
+        )
+        return _row_to_record(row) if row is not None else None
+
+    async def insert_observation(self, obs: ObservationRecord) -> None:
+        await self._execute(
+            _SQL_INSERT_OBS,
+            (
+                _to_blob(obs.id),
+                _to_blob(obs.entity_pk),
+                obs.field_name,
+                obs.value_type,
+                obs.value_str,
+                obs.value_int,
+                obs.value_float,
+                obs.value_bool,
+                obs.value_datetime,
+                obs.value_date,
+                obs.value_time,
+                obs.value_json,
+                _fmt(obs.first_seen),
+                _fmt(obs.last_seen),
+            ),
+        )
+
+    async def update_last_seen(self, obs_id: uuid.UUID, ts: datetime) -> None:
+        await self._execute(
+            _SQL_UPDATE_OBS_LAST_SEEN, (_fmt(ts), _to_blob(obs_id))
+        )
+
+
+def _row_to_record(row: tuple) -> ObservationRecord:
+    return ObservationRecord(
+        id=_from_blob(bytes(row[0])),
+        entity_pk=_from_blob(bytes(row[1])),
+        field_name=row[2],
+        value_type=row[3],
+        value_str=row[4],
+        value_int=row[5],
+        value_float=row[6],
+        value_bool=row[7],
+        value_datetime=row[8],
+        value_date=row[9],
+        value_time=row[10],
+        value_json=row[11],
+        first_seen=datetime.fromisoformat(row[12]),
+        last_seen=datetime.fromisoformat(row[13]),
+    )

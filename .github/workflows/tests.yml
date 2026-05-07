@@ -23,7 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.12", "3.13", "3.14"]
+        # 3.14 omitted until duckdb/asyncpg/aiomysql publish 3.14 wheels
+        python-version: ["3.12", "3.13"]
       fail-fast: false
 
     steps:
