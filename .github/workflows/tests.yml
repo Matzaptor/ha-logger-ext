@@ -23,8 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # 3.14 omitted until duckdb/asyncpg/aiomysql publish 3.14 wheels
-        python-version: ["3.12", "3.13"]
+        python-version: ["3.12", "3.13", "3.14"]
       fail-fast: false
 
     steps:
@@ -38,6 +37,9 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements-test.txt
+
+      - name: Install optional dependencies (best-effort)
+        run: pip install -r requirements-test-optional.txt || true
 
       - name: Run tests
         run: pytest tests/ -v --junitxml=test-results-${{ matrix.python-version }}.xml

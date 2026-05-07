@@ -10,8 +10,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from custom_components.ha_logger_ext.storage.base import ObservationRecord
-from custom_components.ha_logger_ext.storage.duckdb import DuckDBBackend
 from custom_components.ha_logger_ext.storage.factory import create_backend
+
+try:
+    from custom_components.ha_logger_ext.storage.duckdb import DuckDBBackend
+    _DUCKDB_AVAILABLE = True
+except ImportError:
+    _DUCKDB_AVAILABLE = False
+    DuckDBBackend = None  # type: ignore[assignment,misc]
 from custom_components.ha_logger_ext.storage.uuid7 import uuid7
 from custom_components.ha_logger_ext.const import (
     CONF_DB_HOST,
@@ -47,6 +53,7 @@ def _obs(entity_pk: uuid.UUID, field: str, value_type: str, **kwargs: object) ->
 # DuckDB — real tests (embedded, no network)
 # ---------------------------------------------------------------------------
 
+@pytest.mark.skipif(not _DUCKDB_AVAILABLE, reason="duckdb not installed")
 class TestDuckDBBackend:
     async def test_duckdb_creates_entity(self, tmp_path: Path) -> None:
         backend = DuckDBBackend(tmp_path / "test.duckdb")
