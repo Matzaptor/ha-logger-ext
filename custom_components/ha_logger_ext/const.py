@@ -16,7 +16,7 @@ DB_TYPE_MYSQL = "mysql"
 DB_TYPE_POSTGRESQL = "postgresql"
 
 DEFAULT_DB_TYPE = DB_TYPE_SQLITE
-DEFAULT_DB_PATH = "ha_logger_ext.db"
+DEFAULT_DB_PATH = "ha_logger_ext/ha_logger_ext.db"
 
 # Filter config (stored as list[str] in config entry data)
 CONF_EXCLUDE_DOMAINS = "exclude_domains"

@@ -17,6 +17,7 @@ def create_backend(config: dict[str, Any], config_dir: str) -> StorageBackend:
             path = Path(raw)
             if not path.is_absolute():
                 path = Path(config_dir) / path
+            path.parent.mkdir(parents=True, exist_ok=True)
             return SQLiteBackend(path)
         case "mysql" | "postgresql":
             raise NotImplementedError(f"Backend '{db_type}' is not yet implemented.")
