@@ -28,7 +28,6 @@ rules:
   discovery: exempt                # not a discoverable device integration
   discovery-update-info: exempt    # no discovery
   docs-configuration-parameters: done
-  docs-installation-instructions: done
   docs-known-limitations: done
   entity-category: exempt          # no entities
   entity-device-class: exempt      # no entities
@@ -36,7 +35,5 @@ rules:
   entity-translations: exempt      # no entities
   exception-translations: todo     # user-facing errors not yet translated
   icon-translations: exempt        # no entities
-  reconfiguration-flow: done
-  repair-issues: exempt
   strict-typing: todo              # type hints used throughout; mypy strict not yet enforced
   test-coverage: done
