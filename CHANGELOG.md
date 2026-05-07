@@ -7,6 +7,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.1.2] — 2026-05-07
+
+### Fixed
+
+- `import_from_recorder`: newer HA versions raise `ValueError: entity_ids must be provided` when `None` is passed to `get_significant_states`; the importer now resolves `entity_ids=None` by querying the recorder for all distinct entity IDs before entering the chunk loop
+
+---
+
 ## [1.1.1] — 2026-05-07
 
 ### Fixed
@@ -138,7 +146,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - GitHub Actions CI matrix: Python 3.12, 3.13, 3.14
 - 59 automated tests covering config flow, serialization, storage, deduplication, migrations, lifecycle, filters, and graceful shutdown
 
-[Unreleased]: https://github.com/Matzaptor/ha-logger-ext/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/Matzaptor/ha-logger-ext/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/Matzaptor/ha-logger-ext/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/Matzaptor/ha-logger-ext/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/Matzaptor/ha-logger-ext/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Matzaptor/ha-logger-ext/compare/v0.3.0...v1.0.0
