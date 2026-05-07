@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -83,6 +83,7 @@ class LoggerCoordinator:
         self._flush_task: asyncio.Task | None = None
         self._unsub_states: Any = None
         self._unsub_stop: Any = None
+        self._last_flush: datetime | None = None
 
         # Options take precedence over data so filters can be updated via
         # the options flow without re-adding the integration.
@@ -107,6 +108,14 @@ class LoggerCoordinator:
     @property
     def is_running(self) -> bool:
         return not self._stopped
+
+    @property
+    def last_flush(self) -> datetime | None:
+        return self._last_flush
+
+    @property
+    def flush_interval(self) -> int:
+        return self._flush_interval
 
     def _should_track_entity(self, entity_id: str) -> bool:
         domain = entity_id.split(".")[0]
@@ -231,6 +240,7 @@ class LoggerCoordinator:
                 _LOGGER.exception("Failed to process snapshot for %s", snap.entity_id)
         try:
             await self._backend.commit()
+            self._last_flush = datetime.now(timezone.utc)
         except Exception:
             _LOGGER.exception("Flush commit failed, attempting rollback")
             await self._backend.rollback()
