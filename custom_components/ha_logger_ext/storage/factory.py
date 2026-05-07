@@ -39,7 +39,13 @@ def create_backend(config: dict[str, Any], config_dir: str) -> StorageBackend:
             return SQLiteBackend(path)
 
         case "duckdb":
-            from .duckdb import DuckDBBackend
+            try:
+                from .duckdb import DuckDBBackend
+            except ImportError as err:
+                raise ValueError(
+                    "The 'duckdb' package is not installed. "
+                    "Install it manually: pip install duckdb>=0.10.0"
+                ) from err
             raw = config.get(CONF_DB_PATH, DEFAULT_DUCKDB_PATH)
             path = Path(raw)
             if not path.is_absolute():
@@ -48,7 +54,13 @@ def create_backend(config: dict[str, Any], config_dir: str) -> StorageBackend:
             return DuckDBBackend(path)
 
         case "mysql":
-            from .mysql import MySQLBackend
+            try:
+                from .mysql import MySQLBackend
+            except ImportError as err:
+                raise ValueError(
+                    "The 'aiomysql' package is not installed. "
+                    "Install it manually: pip install aiomysql>=0.2.0"
+                ) from err
             return MySQLBackend(
                 host=config.get(CONF_DB_HOST, DEFAULT_DB_HOST),
                 port=int(config.get(CONF_DB_PORT, DEFAULT_MYSQL_PORT)),
@@ -58,7 +70,13 @@ def create_backend(config: dict[str, Any], config_dir: str) -> StorageBackend:
             )
 
         case "postgresql":
-            from .postgresql import PostgreSQLBackend
+            try:
+                from .postgresql import PostgreSQLBackend
+            except ImportError as err:
+                raise ValueError(
+                    "The 'asyncpg' package is not installed. "
+                    "Install it manually: pip install asyncpg>=0.29.0"
+                ) from err
             return PostgreSQLBackend(
                 host=config.get(CONF_DB_HOST, DEFAULT_DB_HOST),
                 port=int(config.get(CONF_DB_PORT, DEFAULT_POSTGRESQL_PORT)),
