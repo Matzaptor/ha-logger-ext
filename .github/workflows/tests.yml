@@ -21,9 +21,13 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.experimental || false }}
     strategy:
       matrix:
         python-version: ["3.12", "3.13", "3.14"]
+        include:
+          - python-version: "3.14"
+            experimental: true
       fail-fast: false
 
     steps:
