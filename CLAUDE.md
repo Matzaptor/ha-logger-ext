@@ -389,10 +389,13 @@ The default behavior must be local-first and privacy-respecting.
 24. `strings.json` / `translations/en.json` updated for new steps (`embedded`, `server`)
 25. `manifest.json` updated with `duckdb`, `aiomysql`, `asyncpg` requirements
 
+26. tests for new backends and updated config flow (110 tests total)
+27. version bumped to 1.0.0
+
 ### Next
 
-26. tests for new backends and updated config flow
-27. final version bump to 1.0.0 and release
+28. data retention policy
+29. export tooling
 
 ### Permanent constraints
 

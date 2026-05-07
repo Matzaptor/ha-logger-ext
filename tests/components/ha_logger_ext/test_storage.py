@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import sys
+import types
 import aiosqlite
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -410,13 +413,28 @@ class TestCreateBackend:
         with pytest.raises(ValueError, match="Unknown database type"):
             create_backend({"db_type": "oracle"}, config_dir=str(tmp_path))
 
-    def test_mysql_raises_not_implemented(self, tmp_path: Path) -> None:
-        with pytest.raises(NotImplementedError):
-            create_backend({"db_type": "mysql"}, config_dir=str(tmp_path))
+    def test_mysql_factory_returns_mysql_backend(self, tmp_path: Path) -> None:
+        aiomysql_mock = types.ModuleType("aiomysql")
+        aiomysql_mock.Pool = object  # type: ignore[attr-defined]
+        aiomysql_mock.Connection = object  # type: ignore[attr-defined]
+        aiomysql_mock.cursors = types.ModuleType("aiomysql.cursors")  # type: ignore[attr-defined]
+        with patch.dict(sys.modules, {"aiomysql": aiomysql_mock}):
+            from custom_components.ha_logger_ext.storage.mysql import MySQLBackend
+            backend = create_backend({"db_type": "mysql"}, config_dir=str(tmp_path))
+            assert isinstance(backend, MySQLBackend)
 
-    def test_postgresql_raises_not_implemented(self, tmp_path: Path) -> None:
-        with pytest.raises(NotImplementedError):
-            create_backend({"db_type": "postgresql"}, config_dir=str(tmp_path))
+    def test_postgresql_factory_returns_postgresql_backend(self, tmp_path: Path) -> None:
+        asyncpg_mock = types.ModuleType("asyncpg")
+        asyncpg_mock.Pool = object  # type: ignore[attr-defined]
+        asyncpg_mock.Connection = object  # type: ignore[attr-defined]
+        asyncpg_mock.Record = object  # type: ignore[attr-defined]
+        transaction_mod = types.ModuleType("asyncpg.transaction")
+        transaction_mod.Transaction = object  # type: ignore[attr-defined]
+        asyncpg_mock.transaction = transaction_mod  # type: ignore[attr-defined]
+        with patch.dict(sys.modules, {"asyncpg": asyncpg_mock, "asyncpg.transaction": transaction_mod}):
+            from custom_components.ha_logger_ext.storage.postgresql import PostgreSQLBackend
+            backend = create_backend({"db_type": "postgresql"}, config_dir=str(tmp_path))
+            assert isinstance(backend, PostgreSQLBackend)
 
 
 class TestSQLiteBackendEdgeCases:
