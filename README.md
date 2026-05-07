@@ -197,6 +197,28 @@ pytest tests/ -v
 
 Tests use `pytest-homeassistant-custom-component` and do not require a running Home Assistant instance or a real database server. MySQL and PostgreSQL backend tests use mocked drivers; DuckDB tests run against a real in-process database.
 
+## Importing historical data from the HA Recorder
+
+If you have months or years of history in the built-in HA Recorder, you can backfill ha_logger_ext using the **Import from Recorder** service.
+
+### How it works
+
+1. Go to **Developer tools → Services** and call `ha_logger_ext.import_from_recorder`.
+2. The service queries the Recorder for the requested time range, compresses consecutive equal values into validity-range intervals (RLE), and inserts only time ranges that do not already exist in your ha_logger_ext database.
+3. Progress is logged at INFO level (`Logger: ha_logger_ext.importer`).
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `start_date` | ISO 8601 string | 2 years ago | Earliest date to import |
+| `end_date` | ISO 8601 string | today | Latest date to import |
+| `entity_ids` | list of entity IDs | all entities | Restrict import to specific entities |
+
+### Idempotency and resumability
+
+The import is **safe to run multiple times**. Before inserting each interval, it checks whether an overlapping observation already exists in ha_logger_ext. If the import is interrupted (e.g. HA restart), re-running it skips already-imported time ranges and continues from the first gap.
+
 ## Known limitations
 
 - No data retention policy yet — the database grows indefinitely.

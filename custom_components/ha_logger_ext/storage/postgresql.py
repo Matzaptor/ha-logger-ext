@@ -90,6 +90,14 @@ INSERT INTO observations (
 
 _SQL_UPDATE_OBS_LAST_SEEN = "UPDATE observations SET last_seen = $1 WHERE id = $2"
 
+_SQL_HAS_OBS_IN_RANGE = """
+SELECT 1 FROM observations
+WHERE entity_pk = $1 AND field = $2
+  AND first_seen <= $3
+  AND last_seen  >= $4
+LIMIT 1
+"""
+
 _MigrationFn = Callable[[asyncpg.Connection], Awaitable[None]]
 _MIGRATIONS: dict[int, _MigrationFn] = {}
 
@@ -250,6 +258,18 @@ class PostgreSQLBackend(StorageBackend):
 
     async def update_last_seen(self, obs_id: uuid.UUID, ts: datetime) -> None:
         await self._execute(_SQL_UPDATE_OBS_LAST_SEEN, _fmt(ts), _to_blob(obs_id))
+
+    async def has_observations_in_range(
+        self,
+        entity_pk: uuid.UUID,
+        field_name: str,
+        start: datetime,
+        end: datetime,
+    ) -> bool:
+        row = await self._fetchrow(
+            _SQL_HAS_OBS_IN_RANGE, _to_blob(entity_pk), field_name, _fmt(end), _fmt(start)
+        )
+        return row is not None
 
 
 def _row_to_record(row: asyncpg.Record) -> ObservationRecord:

@@ -98,6 +98,14 @@ INSERT INTO observations (
 
 _SQL_UPDATE_OBS_LAST_SEEN = "UPDATE observations SET last_seen = ? WHERE id = ?"
 
+_SQL_HAS_OBS_IN_RANGE = """
+SELECT 1 FROM observations
+WHERE entity_pk = ? AND field = ?
+  AND first_seen <= ?
+  AND last_seen  >= ?
+LIMIT 1
+"""
+
 # Maps target schema version → sync migration function.
 # Each function receives an open duckdb.DuckDBPyConnection and must not commit.
 _MigrationFn = Callable[[duckdb.DuckDBPyConnection], None]
@@ -318,6 +326,22 @@ class DuckDBBackend(StorageBackend):
 
         await self._run_sync(_update)
         await self._maybe_commit()
+
+    async def has_observations_in_range(
+        self,
+        entity_pk: uuid.UUID,
+        field_name: str,
+        start: datetime,
+        end: datetime,
+    ) -> bool:
+        assert self._conn is not None
+        params = [_to_blob(entity_pk), field_name, _fmt(end), _fmt(start)]
+
+        def _select() -> tuple[Any, ...] | None:
+            return self._conn.execute(_SQL_HAS_OBS_IN_RANGE, params).fetchone()
+
+        row = await self._run_sync(_select)
+        return row is not None
 
 
 def _row_to_record(row: tuple[Any, ...]) -> ObservationRecord:

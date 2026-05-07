@@ -40,3 +40,6 @@ CONF_QUEUE_MAX_SIZE = "queue_max_size"
 
 DEFAULT_FLUSH_INTERVAL = 30       # seconds
 DEFAULT_QUEUE_MAX_SIZE = 10_000   # max buffered snapshots before dropping
+
+# Services
+SERVICE_IMPORT_FROM_RECORDER = "import_from_recorder"

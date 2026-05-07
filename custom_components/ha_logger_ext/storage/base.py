@@ -45,6 +45,15 @@ class StorageBackend(ABC):
     async def update_last_seen(self, obs_id: uuid.UUID, ts: datetime) -> None: ...
 
     @abstractmethod
+    async def has_observations_in_range(
+        self,
+        entity_pk: uuid.UUID,
+        field_name: str,
+        start: datetime,
+        end: datetime,
+    ) -> bool: ...
+
+    @abstractmethod
     async def close(self) -> None: ...
 
     # --- Transaction control ---
