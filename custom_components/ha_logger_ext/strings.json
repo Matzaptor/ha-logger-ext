@@ -18,16 +18,7 @@
           "exclude_entities": "Specific entity IDs that will not be logged.",
           "exclude_attributes": "Attribute names that will never be logged for any entity."
         }
-      }
-    },
-    "abort": {
-      "single_instance_allowed": "Only one instance of HA Logger Extended is allowed.",
-      "reconfigure_successful": "Re-configuration was successful."
-    },
-    "error": {
-      "cannot_connect": "Unable to initialize the database."
-    },
-    "reconfigure": {
+      },
       "reconfigure": {
         "title": "Reconfigure HA Logger Extended",
         "description": "Update the database connection and filter settings. The integration will reload automatically.",
@@ -39,6 +30,13 @@
           "exclude_attributes": "Exclude attributes"
         }
       }
+    },
+    "abort": {
+      "single_instance_allowed": "Only one instance of HA Logger Extended is allowed.",
+      "reconfigure_successful": "Re-configuration was successful."
+    },
+    "error": {
+      "cannot_connect": "Unable to initialize the database."
     }
   },
   "options": {
