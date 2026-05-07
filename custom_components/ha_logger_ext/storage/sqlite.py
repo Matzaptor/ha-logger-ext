@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -101,6 +102,17 @@ INSERT INTO observations (
 _SQL_UPDATE_OBS_LAST_SEEN = "UPDATE observations SET last_seen = ? WHERE id = ?"
 
 
+# Maps target schema version → async migration coroutine.
+# Each function receives an open aiosqlite.Connection and must not commit.
+# To add a migration: define an async function and register it here.
+# Example:
+#   async def _migrate_to_v2(conn: aiosqlite.Connection) -> None:
+#       await conn.execute("ALTER TABLE observations ADD COLUMN ...")
+#   _MIGRATIONS[2] = _migrate_to_v2
+_MigrationFn = Callable[[aiosqlite.Connection], Awaitable[None]]
+_MIGRATIONS: dict[int, _MigrationFn] = {}
+
+
 def _to_blob(u: uuid.UUID) -> bytes:
     return u.bytes
 
@@ -167,17 +179,18 @@ class SQLiteBackend(StorageBackend):
                 f"schema version {_SCHEMA_VERSION}. Please update the integration."
             )
 
-        # Incremental migrations (none yet; added here as schema evolves)
         for target in range(current + 1, _SCHEMA_VERSION + 1):
             _LOGGER.info("Migrating database schema to version %d", target)
-            await self._run_migration(current, target)
+            await self._run_migration(target)
         await self._conn.execute(_SQL_UPDATE_SCHEMA_VERSION, (_SCHEMA_VERSION,))
 
-    async def _run_migration(self, from_version: int, to_version: int) -> None:
-        # Future: add elif branches here for each new schema version.
-        raise NotImplementedError(
-            f"No migration path from schema version {from_version} to {to_version}."
-        )
+    async def _run_migration(self, to_version: int) -> None:
+        migrate = _MIGRATIONS.get(to_version)
+        if migrate is None:
+            raise NotImplementedError(
+                f"No migration defined for schema version {to_version}."
+            )
+        await migrate(self._conn)
 
     # ------------------------------------------------------------------
     # Transaction control

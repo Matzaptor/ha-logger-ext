@@ -10,7 +10,7 @@ from custom_components.ha_logger_ext.const import DB_TYPE_SQLITE, DEFAULT_DB_PAT
 from custom_components.ha_logger_ext.storage.base import ObservationRecord
 from custom_components.ha_logger_ext.storage.factory import create_backend
 from custom_components.ha_logger_ext.storage.serialization import serialize, values_equal
-from custom_components.ha_logger_ext.storage.sqlite import SQLiteBackend, _SCHEMA_VERSION
+from custom_components.ha_logger_ext.storage.sqlite import SQLiteBackend, _MIGRATIONS, _SCHEMA_VERSION
 from custom_components.ha_logger_ext.storage.uuid7 import uuid7
 
 TS = datetime(2026, 5, 6, 10, 0, 0, tzinfo=timezone.utc)
@@ -272,6 +272,65 @@ class TestSchemaMigrations:
         with pytest.raises(RuntimeError, match="newer"):
             await b.initialize()
         await b.close()
+
+    async def test_migration_dispatcher_is_called(self, tmp_path: Path) -> None:
+        """_MIGRATIONS dispatch table is invoked for each incremental version step."""
+        db_path = tmp_path / "migrate.db"
+
+        # Seed a v1 database (current schema, without schema_version table so
+        # initialize() treats it as version 0 and stamps it at 1).
+        b = SQLiteBackend(db_path)
+        await b.initialize()
+        await b.close()
+
+        # Patch _MIGRATIONS to register a fake v2 migration and bump the code version.
+        called: list[int] = []
+
+        async def _fake_v2(conn: aiosqlite.Connection) -> None:
+            called.append(2)
+
+        import custom_components.ha_logger_ext.storage.sqlite as _mod
+        original_version = _mod._SCHEMA_VERSION
+        original_migrations = dict(_mod._MIGRATIONS)
+        try:
+            _mod._SCHEMA_VERSION = 2
+            _mod._MIGRATIONS[2] = _fake_v2
+
+            b2 = SQLiteBackend(db_path)
+            await b2.initialize()
+            await b2.close()
+        finally:
+            _mod._SCHEMA_VERSION = original_version
+            _mod._MIGRATIONS.clear()
+            _mod._MIGRATIONS.update(original_migrations)
+
+        assert called == [2]
+
+        async with aiosqlite.connect(db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            async with conn.execute("SELECT version FROM schema_version") as cur:
+                row = await cur.fetchone()
+        assert row["version"] == 2
+
+    async def test_missing_migration_raises(self, tmp_path: Path) -> None:
+        """NotImplementedError if a required migration has no registered function."""
+        db_path = tmp_path / "missing.db"
+
+        b = SQLiteBackend(db_path)
+        await b.initialize()
+        await b.close()
+
+        import custom_components.ha_logger_ext.storage.sqlite as _mod
+        original_version = _mod._SCHEMA_VERSION
+        try:
+            _mod._SCHEMA_VERSION = 2  # bump without registering a migration
+
+            b2 = SQLiteBackend(db_path)
+            with pytest.raises(NotImplementedError):
+                await b2.initialize()
+            await b2.close()
+        finally:
+            _mod._SCHEMA_VERSION = original_version
 
 
 class TestBatchTransactions:
