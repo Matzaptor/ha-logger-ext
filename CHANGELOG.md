@@ -7,6 +7,18 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.1.1] — 2026-05-07
+
+### Fixed
+
+- `duckdb`, `aiomysql`, `asyncpg` removed from mandatory `requirements` in `manifest.json`; only `aiosqlite` is installed automatically — resolves startup hang on Python 3.14 / ARM64 (e.g. HA Green) where no pre-built wheel exists for duckdb
+
+### Changed
+
+- CI: Python 3.14 re-added to the test matrix; DuckDB tests skipped automatically when the package is unavailable; optional dependencies split into `requirements-test-optional.txt`
+
+---
+
 ## [1.1.0] — 2026-05-07
 
 ### Added
@@ -126,7 +138,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - GitHub Actions CI matrix: Python 3.12, 3.13, 3.14
 - 59 automated tests covering config flow, serialization, storage, deduplication, migrations, lifecycle, filters, and graceful shutdown
 
-[Unreleased]: https://github.com/Matzaptor/ha-logger-ext/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/Matzaptor/ha-logger-ext/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/Matzaptor/ha-logger-ext/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/Matzaptor/ha-logger-ext/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Matzaptor/ha-logger-ext/compare/v0.3.0...v1.0.0
 [0.3.0]: https://github.com/Matzaptor/ha-logger-ext/compare/v0.2.0...v0.3.0
