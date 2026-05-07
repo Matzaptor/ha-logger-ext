@@ -9,21 +9,19 @@ import_from_recorder:
     start_date:
       name: Start date
       description: >
-        Earliest date to import (ISO 8601, e.g. "2022-01-01").
-        Defaults to two years before today.
+        Earliest date to import. Defaults to two years before today.
       required: false
       example: "2022-01-01"
       selector:
-        text:
+        date:
     end_date:
       name: End date
       description: >
-        Latest date to import (ISO 8601, e.g. "2024-12-31").
-        Defaults to today.
+        Latest date to import. Defaults to today.
       required: false
       example: "2024-12-31"
       selector:
-        text:
+        date:
     entity_ids:
       name: Entity IDs
       description: >
