@@ -71,6 +71,31 @@ class RecorderImporter:
         self._hass = hass
         self._backend = backend
 
+    async def _fetch_all_entity_ids(self) -> list[str]:
+        """Return all entity IDs that have states in the recorder.
+
+        Subclass or patch this method in tests to avoid a real recorder dependency.
+        """
+        try:
+            from homeassistant.components.recorder import get_instance
+            from homeassistant.components.recorder.db_schema import States
+            from sqlalchemy import distinct, select
+        except ImportError:
+            return []
+
+        recorder = get_instance(self._hass)
+
+        def _query() -> list[str]:
+            with recorder.get_session() as session:
+                return [
+                    row[0]
+                    for row in session.execute(
+                        select(distinct(States.entity_id))
+                    ).fetchall()
+                ]
+
+        return await recorder.async_add_executor_job(_query)
+
     async def _fetch_earliest_state_time(self) -> datetime | None:
         """Return the oldest state timestamp from the recorder, or None if unavailable.
 
@@ -100,7 +125,7 @@ class RecorderImporter:
         self,
         start: datetime,
         end: datetime,
-        entity_ids: list[str] | None,
+        entity_ids: list[str],
     ) -> dict[str, list[Any]]:
         """Query the HA recorder for states in [start, end].
 
@@ -132,6 +157,12 @@ class RecorderImporter:
         entity_ids: list[str] | None = None,
     ) -> int:
         """Run the import. Returns the total number of intervals inserted."""
+        if entity_ids is None:
+            entity_ids = await self._fetch_all_entity_ids()
+            if not entity_ids:
+                _LOGGER.info("import_from_recorder: no entities found in recorder, nothing to import")
+                return 0
+
         if start_time is None:
             start_time = await self._fetch_earliest_state_time()
             if start_time is None:

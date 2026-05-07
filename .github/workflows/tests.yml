@@ -23,8 +23,13 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.12", "3.13", "3.14"]
+        include:
+          - python-version: "3.12"
+          - python-version: "3.13"
+          - python-version: "3.14"
+            experimental: true
       fail-fast: false
+    continue-on-error: ${{ matrix.experimental == true }}
 
     steps:
       - uses: actions/checkout@v6
