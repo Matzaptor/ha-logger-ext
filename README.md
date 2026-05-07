@@ -29,13 +29,42 @@ Home Assistant's built-in recorder stores raw events. This integration stores **
 
 ## Configuration
 
+### Supported database backends
+
+| Backend | Type | Driver | Notes |
+|---|---|---|---|
+| **SQLite** | Embedded file | `aiosqlite` | Default, no server needed |
+| **DuckDB** | Embedded file | `duckdb` | Columnar, excellent for ML/analytics queries |
+| **MySQL / MariaDB** | Server | `aiomysql` | Requires a running MySQL 8+ or MariaDB server |
+| **PostgreSQL** | Server | `asyncpg` | Requires a running PostgreSQL 13+ server |
+
 ### Setup
+
+**Step 1 — choose backend**
 
 | Field | Description | Default |
 |---|---|---|
-| Database type | `sqlite` (MySQL/PostgreSQL coming later) | `sqlite` |
-| Database file path | Path to the SQLite file, relative to the HA config directory | `ha_logger_ext/ha_logger_ext.db` |
+| Database type | `sqlite`, `duckdb`, `mysql`, or `postgresql` | `sqlite` |
+
+**Step 2a — embedded backends (SQLite / DuckDB)**
+
+| Field | Description | Default |
+|---|---|---|
+| Database file path | Path relative to the HA config directory | `ha_logger_ext/ha_logger_ext.db` (SQLite) / `ha_logger_ext/ha_logger_ext.duckdb` (DuckDB) |
 | Exclude domains | Comma-separated domains to skip (e.g. `automation,sun`) | empty |
+| Exclude entities | Comma-separated entity IDs to skip | empty |
+| Exclude attributes | Comma-separated attribute names to never log | empty |
+
+**Step 2b — server backends (MySQL / PostgreSQL)**
+
+| Field | Description | Default |
+|---|---|---|
+| Host | Server hostname or IP | `localhost` |
+| Port | TCP port | `3306` (MySQL) / `5432` (PostgreSQL) |
+| Database name | Schema / database to use | `ha_logger_ext` |
+| Username | Database user | — |
+| Password | Database password | — |
+| Exclude domains | Comma-separated domains to skip | empty |
 | Exclude entities | Comma-separated entity IDs to skip | empty |
 | Exclude attributes | Comma-separated attribute names to never log | empty |
 
@@ -166,13 +195,12 @@ pip install -r requirements-test.txt
 pytest tests/ -v
 ```
 
-Tests use `pytest-homeassistant-custom-component` and do not require a running Home Assistant instance or a real database server.
+Tests use `pytest-homeassistant-custom-component` and do not require a running Home Assistant instance or a real database server. MySQL and PostgreSQL backend tests use mocked drivers; DuckDB tests run against a real in-process database.
 
 ## Known limitations
 
-- Only SQLite is supported currently. MySQL and PostgreSQL backends are planned.
 - No data retention policy yet — the database grows indefinitely.
-- No export tooling yet — query the SQLite file directly with any SQL client.
+- No export tooling yet — query the database file directly (SQLite/DuckDB) or use any SQL client (MySQL/PostgreSQL).
 
 ## Removal
 

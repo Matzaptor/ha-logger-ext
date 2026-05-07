@@ -382,10 +382,17 @@ The default behavior must be local-first and privacy-respecting.
 17. `quality_scale.yaml` (Bronze/Silver/Gold; Gold items `exception-translations` and `strict-typing` marked done)
 18. expanded test coverage (94 tests: factory error paths, backend edge cases, queue overflow, flush rollback, coordinator lifecycle)
 19. documentation (README: diagnostics section, options filter table, deduplication semantics)
+20. DuckDB backend (`duckdb`, sync API wrapped in executor, same schema and migration pattern)
+21. MySQL backend (`aiomysql`, connection pool, `%s` placeholders, `INSERT IGNORE`)
+22. PostgreSQL backend (`asyncpg`, connection pool, `$N` placeholders, `ON CONFLICT DO NOTHING`)
+23. config flow refactored to 3-step: type selection → embedded path OR server connection params
+24. `strings.json` / `translations/en.json` updated for new steps (`embedded`, `server`)
+25. `manifest.json` updated with `duckdb`, `aiomysql`, `asyncpg` requirements
 
 ### Next
 
-20. optional MySQL/PostgreSQL backend
+26. tests for new backends and updated config flow
+27. final version bump to 1.0.0 and release
 
 ### Permanent constraints
 
@@ -393,7 +400,7 @@ The default behavior must be local-first and privacy-respecting.
 - do not persist raw Home Assistant events as the main dataset
 - do not introduce cloud services
 - do not require environment variables or secrets in production
-- MySQL/PostgreSQL support must go behind the existing `StorageBackend` abstraction
+- additional backends must go behind the existing `StorageBackend` abstraction
 
 ## Local-only notes
 

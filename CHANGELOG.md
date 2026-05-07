@@ -9,6 +9,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- DuckDB backend (`duckdb` driver, sync API wrapped in asyncio executor): same schema, migration dispatcher, and deduplication semantics as SQLite; excellent for analytics and ML queries
+- MySQL / MariaDB backend (`aiomysql`, connection pool, `INSERT IGNORE` for entity upsert, `%s` placeholders)
+- PostgreSQL backend (`asyncpg`, connection pool, `ON CONFLICT DO NOTHING`, `$N` placeholders, `BYTEA` PKs)
+- Config flow refactored to 3 steps: step 1 selects db_type only; step 2a (`embedded`) collects `db_path` and filters for SQLite/DuckDB; step 2b (`server`) collects host/port/name/user/password and filters for MySQL/PostgreSQL — no SQLite file is created if a server backend is chosen
+- `strings.json` / `translations/en.json`: new steps `embedded` and `server` with full field labels and descriptions
+- `manifest.json`: `duckdb>=0.10.0`, `aiomysql>=0.2.0`, `asyncpg>=0.29.0` added to requirements
+- README: backend comparison table, 2-step setup documentation for embedded and server backends
+
 ---
 
 ## [0.3.0] — 2026-05-07
