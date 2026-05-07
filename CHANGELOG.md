@@ -22,6 +22,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `has_observations_in_range(entity_pk, field_name, start, end) -> bool` on `StorageBackend` ABC, implemented in all four backends (SQLite, DuckDB, MySQL, PostgreSQL)
 - `services.yaml` with full field descriptions for the HA Developer tools UI
 - 20 new tests: RLE unit tests, integration tests with real SQLite backend and mocked recorder, overlap detection
+- Two `binary_sensor` entities exposed per config entry:
+  - **Recording** (`mdi:database-clock`): `on` while the coordinator flush loop is running; attributes: `queue_size`, `last_flush`, `flush_interval_seconds`
+  - **Import in progress** (`mdi:database-import`): `on` while `import_from_recorder` is running; attribute `last_import_intervals_inserted` available after completion
+- Both sensors update in push mode via a coordinator listener mechanism (no polling)
+- Integration's own entities are auto-excluded from being logged by the coordinator
+- 11 new tests for binary sensors (141 total)
 
 ---
 

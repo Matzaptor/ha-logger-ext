@@ -5,7 +5,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, ClassVar
 
 import voluptuous as vol
 
@@ -30,6 +30,8 @@ from .storage.base import ObservationRecord, StorageBackend
 from .storage.factory import create_backend
 from .storage.serialization import serialize, values_equal
 from .storage.uuid7 import uuid7
+
+PLATFORMS: list[str] = ["binary_sensor"]
 
 _SERVICE_IMPORT_SCHEMA = vol.Schema(
     {
@@ -82,7 +84,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
 
         importer = RecorderImporter(hass, coordinator.backend)
-        hass.async_create_task(importer.run(start_time, end_time, entity_ids or None))
+
+        async def _run() -> None:
+            coordinator.async_set_importing(True)
+            try:
+                count = await importer.run(start_time, end_time, entity_ids or None)
+                coordinator.async_set_importing(False, count)
+            except Exception:
+                _LOGGER.exception("import_from_recorder task failed")
+                coordinator.async_set_importing(False)
+
+        hass.async_create_task(_run())
 
     hass.services.async_register(
         DOMAIN,
@@ -94,13 +106,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         lambda: hass.services.async_remove(DOMAIN, SERVICE_IMPORT_FROM_RECORDER)
     )
 
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator: LoggerCoordinator = entry.runtime_data
-    await coordinator.stop()
-    return True
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unloaded:
+        await coordinator.stop()
+    return unloaded
 
 
 async def _async_reload_on_options_change(
@@ -130,6 +145,10 @@ class LoggerCoordinator:
         self._unsub_states: Callable[[], None] | None = None
         self._unsub_stop: Callable[[], None] | None = None
         self._last_flush: datetime | None = None
+        self._is_importing: bool = False
+        self._last_import_count: int | None = None
+        self._listeners: set[Callable[[], None]] = set()
+        self._own_entity_ids: set[str] = set()
 
         # Options take precedence over data so filters can be updated via
         # the options flow without re-adding the integration.
@@ -152,6 +171,38 @@ class LoggerCoordinator:
         return self._backend
 
     @property
+    def is_importing(self) -> bool:
+        return self._is_importing
+
+    @property
+    def last_import_count(self) -> int | None:
+        return self._last_import_count
+
+    def async_add_listener(
+        self, update_callback: Callable[[], None]
+    ) -> Callable[[], None]:
+        """Register a listener for coordinator state changes. Returns unsubscribe callable."""
+        self._listeners.add(update_callback)
+
+        @callback
+        def _remove() -> None:
+            self._listeners.discard(update_callback)
+
+        return _remove
+
+    @callback
+    def _async_notify_listeners(self) -> None:
+        for listener in list(self._listeners):
+            listener()
+
+    @callback
+    def async_set_importing(self, importing: bool, count: int | None = None) -> None:
+        self._is_importing = importing
+        if count is not None:
+            self._last_import_count = count
+        self._async_notify_listeners()
+
+    @property
     def queue_size(self) -> int:
         return self._queue.qsize()
 
@@ -167,11 +218,16 @@ class LoggerCoordinator:
     def flush_interval(self) -> int:
         return self._flush_interval
 
+    def register_own_entity(self, entity_id: str) -> None:
+        """Exclude an entity owned by this integration from being logged."""
+        self._own_entity_ids.add(entity_id)
+
     def _should_track_entity(self, entity_id: str) -> bool:
         domain = entity_id.split(".")[0]
         return (
             domain not in self._exclude_domains
             and entity_id not in self._exclude_entities
+            and entity_id not in self._own_entity_ids
         )
 
     def _should_track_attribute(self, attr_name: str) -> bool:
@@ -210,6 +266,7 @@ class LoggerCoordinator:
         if self._stopped:
             return
         self._stopped = True
+        self._async_notify_listeners()
 
         if self._unsub_states is not None:
             self._unsub_states()
