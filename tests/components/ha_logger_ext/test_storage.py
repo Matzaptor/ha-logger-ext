@@ -316,7 +316,7 @@ class TestBatchTransactions:
 class TestCreateBackend:
     def test_default_path_uses_dedicated_subdirectory(self, tmp_path: Path) -> None:
         backend = create_backend(
-            {DB_TYPE_SQLITE: "sqlite"},
+            {"db_type": DB_TYPE_SQLITE},
             config_dir=str(tmp_path),
         )
         expected = tmp_path / DEFAULT_DB_PATH
@@ -345,5 +345,3 @@ class TestCreateBackend:
     def test_returns_sqlite_backend_instance(self, tmp_path: Path) -> None:
         backend = create_backend({"db_type": DB_TYPE_SQLITE}, config_dir=str(tmp_path))
         assert isinstance(backend, SQLiteBackend)
-
-        await b.close()
