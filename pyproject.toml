@@ -12,6 +12,17 @@ dependencies = []
 testpaths = ["tests"]
 asyncio_mode = "auto"
 
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+# Home Assistant stubs are incomplete; ignore missing imports from HA internals.
+[[tool.mypy.overrides]]
+module = ["homeassistant.*", "pytest_homeassistant_custom_component.*"]
+ignore_missing_imports = true
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["custom_components*"]

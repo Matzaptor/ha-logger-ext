@@ -33,7 +33,7 @@ rules:
   entity-device-class: exempt      # no entities
   entity-disabled-by-default: exempt  # no entities
   entity-translations: exempt      # no entities
-  exception-translations: todo     # user-facing errors not yet translated
+  exception-translations: done
   icon-translations: exempt        # no entities
-  strict-typing: todo              # type hints used throughout; mypy strict not yet enforced
+  strict-typing: done              # mypy strict enforced in pyproject.toml
   test-coverage: done

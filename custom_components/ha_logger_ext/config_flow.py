@@ -4,7 +4,7 @@ import logging
 
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 
 from .const import (
@@ -26,6 +26,19 @@ _LOGGER = logging.getLogger(__name__)
 
 # MySQL and PostgreSQL will be unlocked in a future release.
 _AVAILABLE_DB_TYPES = [DB_TYPE_SQLITE]
+
+
+async def _test_backend(hass: HomeAssistant, data: dict) -> str | None:
+    """Try to initialise the backend; return an error key or None on success."""
+    from .storage.factory import create_backend
+    backend = create_backend(data, hass.config.config_dir)
+    try:
+        await backend.initialize()
+        await backend.close()
+    except Exception:
+        _LOGGER.exception("Database initialisation failed during config flow validation")
+        return "cannot_connect"
+    return None
 
 
 def _parse_csv(value: str) -> list[str]:
@@ -76,10 +89,15 @@ class HaLoggerExtConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            return self.async_create_entry(
-                title="HA Logger Extended",
-                data=_build_data(user_input),
-            )
+            data = _build_data(user_input)
+            error = await _test_backend(self.hass, data)
+            if error:
+                errors["base"] = error
+            else:
+                return self.async_create_entry(
+                    title="HA Logger Extended",
+                    data=data,
+                )
 
         return self.async_show_form(
             step_id="user",
@@ -94,9 +112,14 @@ class HaLoggerExtConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            return self.async_update_reload_and_abort(
-                entry, data_updates=_build_data(user_input)
-            )
+            data = _build_data(user_input)
+            error = await _test_backend(self.hass, data)
+            if error:
+                errors["base"] = error
+            else:
+                return self.async_update_reload_and_abort(
+                    entry, data_updates=data
+                )
 
         current = entry.data
         return self.async_show_form(

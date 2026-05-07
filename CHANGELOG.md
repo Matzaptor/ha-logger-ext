@@ -11,6 +11,32 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.0] — 2026-05-07
+
+### Added
+
+- Config flow DB validation: `_test_backend()` helper initialises and closes the backend before accepting a new entry; returns `cannot_connect` on failure and shows the error in the form
+- Same validation applied to the reconfigure flow
+- `strict-typing` enforced: `mypy --strict` added to `pyproject.toml`; `mypy>=1.5` added to `requirements-test.txt`
+- Factory error paths: `create_backend` raises `ValueError` for unknown `db_type` and `NotImplementedError` for `mysql`/`postgresql`
+- `TestSQLiteBackendEdgeCases`: close-before-initialize, idempotent initialize, schema already at current version, schema newer than integration (RuntimeError)
+- `TestQueueBehavior`: queue-full during start drops snapshots without raising; queue-full on state-change drops events without raising
+- `TestFlushRollback`: commit failure triggers rollback and keeps coordinator running
+- Config flow range-violation tests: options flow rejects `flush_interval < 5` and `queue_max_size > 100 000`
+- README: Diagnostics section with full key/value table; Options table extended with filter override fields
+
+### Changed
+
+- `quality_scale.yaml`: `exception-translations` and `strict-typing` promoted from `todo` to `done`
+- Options section in README clarifies that filter values set in options override setup-time values
+- CLAUDE.md: implementation status updated (steps 11–19 marked completed, step 20 remaining)
+
+### Fixed
+
+- `test_rollback_discards_writes`: missing `await b.close()` left an aiosqlite worker thread alive, causing the HA test fixture thread-leak assertion to fail
+
+---
+
 ## [0.2.0] — 2026-05-07
 
 ### Added

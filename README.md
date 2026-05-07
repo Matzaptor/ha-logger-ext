@@ -36,8 +36,11 @@ Home Assistant's built-in recorder stores raw events. This integration stores **
 |---|---|---|---|
 | Flush interval | Seconds between buffer flushes to the database | `30` | 5–300 |
 | Queue size limit | Max observations buffered in memory before dropping | `10000` | 100–100 000 |
+| Exclude domains | Override the setup-time domain filter | _(from setup)_ | |
+| Exclude entities | Override the setup-time entity filter | _(from setup)_ | |
+| Exclude attributes | Override the setup-time attribute filter | _(from setup)_ | |
 
-Options can be changed at any time via **Settings → Devices & Services → HA Logger Extended → Configure**. Changing options reloads the integration automatically.
+Options can be changed at any time via **Settings → Devices & Services → HA Logger Extended → Configure**. Changing options reloads the integration automatically. Filter values set here override the values entered at setup time.
 
 ## Database schema
 
@@ -117,6 +120,24 @@ The third `20.0` opens a new interval because it follows a different value. This
 State change observations are buffered in an in-memory queue and flushed to the database in a **single transaction** per flush cycle. No I/O happens inside HA event callbacks.
 
 If the queue fills up before a flush, new observations are dropped and a warning is logged. Increase **Queue size limit** if this happens frequently.
+
+## Diagnostics
+
+The integration exposes diagnostics data under **Settings → Devices & Services → HA Logger Extended → Download diagnostics**.
+
+| Section | Key | Description |
+|---|---|---|
+| `config` | `db_type` | Database backend in use |
+| `config` | `db_path` | Resolved path to the database file |
+| `config` | `exclude_domains` | Domains excluded from logging |
+| `config` | `exclude_entities` | Entities excluded from logging |
+| `config` | `exclude_attributes` | Attributes excluded from logging |
+| `options` | `flush_interval` | Flush interval in seconds |
+| `options` | `queue_max_size` | Maximum queue depth |
+| `coordinator` | `is_running` | Whether the background loop is active |
+| `coordinator` | `queue_size` | Current number of buffered observations |
+| `coordinator` | `flush_interval` | Effective flush interval |
+| `coordinator` | `last_flush` | UTC ISO 8601 timestamp of last successful flush, or `null` |
 
 ## Development setup
 
