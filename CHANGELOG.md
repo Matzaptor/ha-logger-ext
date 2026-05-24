@@ -7,6 +7,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.1.3] — 2026-05-24
+
+### Added
+
+- `import_from_recorder` now emits per-entity structured log messages at DEBUG level;
+  grep by entity ID to see exactly how many intervals were inserted or already present
+- Per-chunk log downgraded from INFO to DEBUG; overall start/completion summary stays at INFO
+- 6 new `caplog`-based tests covering INFO and DEBUG paths, including idempotency and empty-chunk edge cases
+
+---
+
 ## [1.1.2] — 2026-05-07
 
 ### Fixed
@@ -146,7 +157,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - GitHub Actions CI matrix: Python 3.12, 3.13, 3.14
 - 59 automated tests covering config flow, serialization, storage, deduplication, migrations, lifecycle, filters, and graceful shutdown
 
-[Unreleased]: https://github.com/Matzaptor/ha-logger-ext/compare/v1.1.2...HEAD
+[Unreleased]: https://github.com/Matzaptor/ha-logger-ext/compare/v1.1.3...HEAD
+[1.1.3]: https://github.com/Matzaptor/ha-logger-ext/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/Matzaptor/ha-logger-ext/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/Matzaptor/ha-logger-ext/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/Matzaptor/ha-logger-ext/compare/v1.0.0...v1.1.0
