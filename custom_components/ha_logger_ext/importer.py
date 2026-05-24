@@ -169,42 +169,74 @@ class RecorderImporter:
                 _LOGGER.info("import_from_recorder: recorder has no states, nothing to import")
                 return 0
 
-        total = 0
+        _LOGGER.info(
+            "import_from_recorder: starting — %d entities, window %s → %s",
+            len(entity_ids),
+            start_time.date(),
+            end_time.date(),
+        )
+
+        total_inserted = 0
+        total_skipped = 0
         chunk_start = start_time
         while chunk_start < end_time:
             chunk_end = min(chunk_start + timedelta(days=_CHUNK_DAYS), end_time)
-            _LOGGER.info(
-                "import_from_recorder: processing %s → %s",
+            _LOGGER.debug(
+                "import_from_recorder: chunk %s → %s",
                 chunk_start.date(),
                 chunk_end.date(),
             )
             states_map = await self._fetch_states(chunk_start, chunk_end, entity_ids)
+            if not states_map:
+                _LOGGER.debug(
+                    "import_from_recorder: chunk %s → %s — no data returned by recorder",
+                    chunk_start.date(),
+                    chunk_end.date(),
+                )
             for entity_id, states in states_map.items():
-                total += await self._import_entity_states(entity_id, states)
+                ins, skp = await self._import_entity_states(entity_id, states)
+                total_inserted += ins
+                total_skipped += skp
             chunk_start = chunk_end
 
-        _LOGGER.info("import_from_recorder: complete, %d intervals inserted", total)
-        return total
+        _LOGGER.info(
+            "import_from_recorder: complete — %d inserted, %d skipped",
+            total_inserted,
+            total_skipped,
+        )
+        return total_inserted
 
     async def _import_entity_states(
         self, entity_id: str, states: list[Any]
-    ) -> int:
-        """Reconstruct validity intervals for one entity and insert gaps."""
+    ) -> tuple[int, int]:
+        """Reconstruct validity intervals for one entity and insert gaps.
+
+        Returns (inserted, skipped).
+        """
         if not states:
-            return 0
+            return 0, 0
 
         domain = entity_id.split(".")[0]
         ts0 = _ensure_utc(states[0].last_updated)
         entity_pk = await self._backend.get_or_create_entity(entity_id, domain, ts0)
 
         field_values = _collect_field_values(states)
+        _LOGGER.debug(
+            "import_from_recorder: processing %s (%d states, %d fields)",
+            entity_id,
+            len(states),
+            len(field_values),
+        )
+
         inserted = 0
+        skipped = 0
 
         for field_name, values in field_values.items():
             for interval in _rle_compress(values):
                 if await self._backend.has_observations_in_range(
                     entity_pk, field_name, interval.first_seen, interval.last_seen
                 ):
+                    skipped += 1
                     continue
                 obs = ObservationRecord(
                     id=uuid7(),
@@ -225,4 +257,10 @@ class RecorderImporter:
                 await self._backend.insert_observation(obs)
                 inserted += 1
 
-        return inserted
+        _LOGGER.debug(
+            "import_from_recorder: %s — %d inserted, %d skipped",
+            entity_id,
+            inserted,
+            skipped,
+        )
+        return inserted, skipped

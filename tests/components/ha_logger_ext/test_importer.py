@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -290,3 +291,93 @@ class TestHasObservationsInRange:
         pk = await backend.get_or_create_entity("sensor.t", "sensor", TS0)
         result = await backend.has_observations_in_range(pk, "unit", TS0, TS2)
         assert result is False
+
+
+# ---------------------------------------------------------------------------
+# Logging tests
+# ---------------------------------------------------------------------------
+
+_IMPORTER_LOGGER = "custom_components.ha_logger_ext.importer"
+
+
+class _EmptyChunkImporter(_FakeImporter):
+    """_FakeImporter variant that always returns an empty states map from _fetch_states."""
+
+    async def _fetch_states(
+        self,
+        start: datetime,
+        end: datetime,
+        entity_ids: list[str],
+    ) -> dict[str, list[Any]]:
+        return {}
+
+
+class TestImporterLogging:
+    async def test_info_log_at_start(
+        self, backend: SQLiteBackend, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        states = [_state("sensor.temp", "20", TS0)]
+        hass = MagicMock()
+        importer = _FakeImporter(hass, backend, {"sensor.temp": states})
+        with caplog.at_level(logging.INFO, logger=_IMPORTER_LOGGER):
+            await importer.run(TS0, TS1)
+        assert "starting" in caplog.text
+        assert "1 entities" in caplog.text
+
+    async def test_info_log_at_completion(
+        self, backend: SQLiteBackend, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        states = [_state("sensor.temp", "20", TS0)]
+        hass = MagicMock()
+        importer = _FakeImporter(hass, backend, {"sensor.temp": states})
+        with caplog.at_level(logging.INFO, logger=_IMPORTER_LOGGER):
+            await importer.run(TS0, TS1)
+        assert "complete" in caplog.text
+        assert "inserted" in caplog.text
+        assert "skipped" in caplog.text
+
+    async def test_debug_log_processing_entity(
+        self, backend: SQLiteBackend, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        states = [_state("sensor.temp", "20", TS0), _state("sensor.temp", "21", TS1)]
+        hass = MagicMock()
+        importer = _FakeImporter(hass, backend, {"sensor.temp": states})
+        with caplog.at_level(logging.DEBUG, logger=_IMPORTER_LOGGER):
+            await importer.run(TS0, TS2)
+        assert "processing sensor.temp" in caplog.text
+        assert "states" in caplog.text
+
+    async def test_debug_log_entity_result(
+        self, backend: SQLiteBackend, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        states = [_state("sensor.temp", "20", TS0), _state("sensor.temp", "21", TS1)]
+        hass = MagicMock()
+        importer = _FakeImporter(hass, backend, {"sensor.temp": states})
+        with caplog.at_level(logging.DEBUG, logger=_IMPORTER_LOGGER):
+            await importer.run(TS0, TS2)
+        assert "sensor.temp" in caplog.text
+        assert "inserted" in caplog.text
+        assert "skipped" in caplog.text
+
+    async def test_debug_log_skipped_on_second_run(
+        self, backend: SQLiteBackend, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        states = [_state("sensor.temp", "20", TS0)]
+        hass = MagicMock()
+        importer = _FakeImporter(hass, backend, {"sensor.temp": states})
+        await importer.run(TS0, TS1)
+        caplog.clear()
+        with caplog.at_level(logging.DEBUG, logger=_IMPORTER_LOGGER):
+            await importer.run(TS0, TS1)
+        assert "1 skipped" in caplog.text
+
+    async def test_debug_log_empty_chunk(
+        self, backend: SQLiteBackend, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        hass = MagicMock()
+        importer = _EmptyChunkImporter(
+            hass, backend, {}, all_entity_ids=["sensor.temp"]
+        )
+        with caplog.at_level(logging.DEBUG, logger=_IMPORTER_LOGGER):
+            await importer.run(TS0, TS1, entity_ids=["sensor.temp"])
+        assert "no data returned by recorder" in caplog.text
