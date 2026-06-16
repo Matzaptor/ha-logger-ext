@@ -6,7 +6,10 @@
   "documentation": "https://github.com/Matzaptor/ha-logger-ext",
   "issue_tracker": "https://github.com/Matzaptor/ha-logger-ext/issues",
   "requirements": [
-    "aiosqlite>=0.19.0"
+    "aiosqlite>=0.19.0",
+    "aiomysql>=0.2.0",
+    "asyncpg>=0.29.0",
+    "duckdb>=0.10.0"
   ],
   "dependencies": [],
   "codeowners": ["@Matzaptor"],
