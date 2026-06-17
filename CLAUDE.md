@@ -395,11 +395,23 @@ The default behavior must be local-first and privacy-respecting.
     7-day sliding window chunks; RLE-compresses consecutive equal values into validity intervals;
     idempotent and resumable via `has_observations_in_range` skip logic; attributes tracked
     per-field; `_fetch_states` overrideable for testing; 20 new tests (130 total)
+29. comprehensive `MySQLBackend` test suite (47 tests: schema init/migrations, lifecycle,
+    entity management, observation CRUD, transaction control, helper functions); fixed
+    `manifest.json` to actually list `aiomysql`/`asyncpg` requirements so Home Assistant
+    auto-installs them on integration setup
+30. DuckDB backend temporarily disabled: its native worker threads crash the Python
+    interpreter on shutdown under Python 3.14 (`Fatal Python error: gilstate_tss_set`,
+    confirmed via CI job logs). `create_backend()` now raises a clear `ValueError` for
+    `db_type: duckdb`, the config flow no longer offers it, and it is no longer installed
+    in `manifest.json` or `requirements-test-optional.txt`. The `duckdb.py` backend module
+    and its unit tests remain in the repository (gated by `skipif duckdb not installed`)
+    for an easy re-enable once upstream ships a Python 3.14-compatible release.
 
 ### Next
 
-29. data retention policy
-30. export tooling
+31. data retention policy
+32. export tooling
+33. re-enable DuckDB backend once upstream fixes Python 3.14 shutdown crash
 
 ### Permanent constraints
 

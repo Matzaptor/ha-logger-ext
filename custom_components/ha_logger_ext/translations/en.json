@@ -8,7 +8,7 @@
           "db_type": "Database type"
         },
         "data_description": {
-          "db_type": "SQLite and DuckDB are embedded (no server needed). MySQL and PostgreSQL require a running server."
+          "db_type": "SQLite is embedded (no server needed). MySQL and PostgreSQL require a running server."
         }
       },
       "embedded": {

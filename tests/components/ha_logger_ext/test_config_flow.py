@@ -81,6 +81,10 @@ async def test_sqlite_step_user_routes_to_embedded(hass: HomeAssistant) -> None:
     assert result["step_id"] == "embedded"
 
 
+@pytest.mark.skip(
+    reason="DuckDB backend temporarily disabled pending Python 3.14 "
+    "compatibility fix; see custom_components/ha_logger_ext/storage/factory.py"
+)
 async def test_duckdb_step_user_routes_to_embedded(hass: HomeAssistant) -> None:
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
@@ -193,6 +197,10 @@ async def test_csv_fields_parsed_to_lists(hass: HomeAssistant) -> None:
 # Config flow — DuckDB (embedded) full flow
 # ---------------------------------------------------------------------------
 
+@pytest.mark.skip(
+    reason="DuckDB backend temporarily disabled pending Python 3.14 "
+    "compatibility fix; see custom_components/ha_logger_ext/storage/factory.py"
+)
 async def test_duckdb_creates_entry_with_default_path(hass: HomeAssistant) -> None:
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
