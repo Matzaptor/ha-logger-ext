@@ -1,3 +1,2 @@
-duckdb>=0.10.0
 aiomysql>=0.2.0
 asyncpg>=0.29.0

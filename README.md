@@ -34,9 +34,13 @@ Home Assistant's built-in recorder stores raw events. This integration stores **
 | Backend | Type | Driver | Notes |
 |---|---|---|---|
 | **SQLite** | Embedded file | `aiosqlite` | Default, no server needed |
-| **DuckDB** | Embedded file | `duckdb` | Columnar, excellent for ML/analytics queries |
 | **MySQL / MariaDB** | Server | `aiomysql` | Requires a running MySQL 8+ or MariaDB server |
 | **PostgreSQL** | Server | `asyncpg` | Requires a running PostgreSQL 13+ server |
+
+> **DuckDB support is temporarily disabled.** DuckDB's native worker threads crash the
+> Python interpreter on shutdown under Python 3.14 (`Fatal Python error: gilstate_tss_set`).
+> The backend code remains in the repository and will be re-enabled once upstream DuckDB
+> ships a fix for this Python version.
 
 ### Setup
 
@@ -44,13 +48,13 @@ Home Assistant's built-in recorder stores raw events. This integration stores **
 
 | Field | Description | Default |
 |---|---|---|
-| Database type | `sqlite`, `duckdb`, `mysql`, or `postgresql` | `sqlite` |
+| Database type | `sqlite`, `mysql`, or `postgresql` | `sqlite` |
 
-**Step 2a — embedded backends (SQLite / DuckDB)**
+**Step 2a — embedded backend (SQLite)**
 
 | Field | Description | Default |
 |---|---|---|
-| Database file path | Path relative to the HA config directory | `ha_logger_ext/ha_logger_ext.db` (SQLite) / `ha_logger_ext/ha_logger_ext.duckdb` (DuckDB) |
+| Database file path | Path relative to the HA config directory | `ha_logger_ext/ha_logger_ext.db` |
 | Exclude domains | Comma-separated domains to skip (e.g. `automation,sun`) | empty |
 | Exclude entities | Comma-separated entity IDs to skip | empty |
 | Exclude attributes | Comma-separated attribute names to never log | empty |
@@ -195,7 +199,7 @@ pip install -r requirements-test.txt
 pytest tests/ -v
 ```
 
-Tests use `pytest-homeassistant-custom-component` and do not require a running Home Assistant instance or a real database server. MySQL and PostgreSQL backend tests use mocked drivers; DuckDB tests run against a real in-process database.
+Tests use `pytest-homeassistant-custom-component` and do not require a running Home Assistant instance or a real database server. MySQL and PostgreSQL backend tests use mocked drivers.
 
 ## Importing historical data from the HA Recorder
 
@@ -221,8 +225,10 @@ The import is **safe to run multiple times**. Before inserting each interval, it
 
 ## Known limitations
 
+- DuckDB backend is temporarily disabled — it crashes the Python interpreter on shutdown
+  under Python 3.14. Selecting `duckdb` raises a clear configuration error.
 - No data retention policy yet — the database grows indefinitely.
-- No export tooling yet — query the database file directly (SQLite/DuckDB) or use any SQL client (MySQL/PostgreSQL).
+- No export tooling yet — query the database file directly (SQLite) or use any SQL client (MySQL/PostgreSQL).
 
 ## Removal
 

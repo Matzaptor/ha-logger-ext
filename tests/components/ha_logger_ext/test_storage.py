@@ -413,6 +413,10 @@ class TestCreateBackend:
         with pytest.raises(ValueError, match="Unknown database type"):
             create_backend({"db_type": "oracle"}, config_dir=str(tmp_path))
 
+    def test_duckdb_raises_temporarily_disabled_error(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="temporarily disabled"):
+            create_backend({"db_type": "duckdb"}, config_dir=str(tmp_path))
+
     def test_mysql_factory_returns_mysql_backend(self, tmp_path: Path) -> None:
         aiomysql_mock = types.ModuleType("aiomysql")
         aiomysql_mock.Pool = object  # type: ignore[attr-defined]
