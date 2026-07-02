@@ -7,6 +7,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.2.0] — 2026-07-02
+
+### Added
+
+A second import service, `import_from_external_db`, brings in history from an external database holding a backup of a Home Assistant Recorder installation, not just the one attached to this HA instance. It works with SQLite, MySQL, or PostgreSQL as the source and is safe to run more than once over the same data.
+
+---
+
 ## [1.1.3] — 2026-05-24
 
 ### Added
@@ -157,7 +165,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - GitHub Actions CI matrix: Python 3.12, 3.13, 3.14
 - 59 automated tests covering config flow, serialization, storage, deduplication, migrations, lifecycle, filters, and graceful shutdown
 
-[Unreleased]: https://github.com/Matzaptor/ha-logger-ext/compare/v1.1.3...HEAD
+[Unreleased]: https://github.com/Matzaptor/ha-logger-ext/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/Matzaptor/ha-logger-ext/compare/v1.1.3...v1.2.0
 [1.1.3]: https://github.com/Matzaptor/ha-logger-ext/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/Matzaptor/ha-logger-ext/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/Matzaptor/ha-logger-ext/compare/v1.1.0...v1.1.1
