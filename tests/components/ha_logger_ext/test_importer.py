@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from custom_components.ha_logger_ext.external_recorder_reader import (
+    SQLiteExternalRecorderReader,
+)
 from custom_components.ha_logger_ext.importer import (
+    ExternalRecorderImporter,
     RecorderImporter,
     _collect_field_values,
     _rle_compress,
@@ -381,3 +386,119 @@ class TestImporterLogging:
         with caplog.at_level(logging.DEBUG, logger=_IMPORTER_LOGGER):
             await importer.run(TS0, TS1, entity_ids=["sensor.temp"])
         assert "no data returned by recorder" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# Integration tests — ExternalRecorderImporter (real SQLite reader + real backend)
+# ---------------------------------------------------------------------------
+
+
+async def _create_external_recorder_db(
+    path: Path, rows: list[tuple[str, str, datetime, dict | None]]
+) -> None:
+    """Build a minimal, modern-schema (HA 2023.4+) recorder sqlite DB for tests."""
+    import aiosqlite
+
+    async with aiosqlite.connect(path) as conn:
+        await conn.execute(
+            "CREATE TABLE states_meta ("
+            "metadata_id INTEGER PRIMARY KEY, entity_id TEXT UNIQUE)"
+        )
+        await conn.execute(
+            "CREATE TABLE state_attributes ("
+            "attributes_id INTEGER PRIMARY KEY, shared_attrs TEXT)"
+        )
+        await conn.execute(
+            "CREATE TABLE states ("
+            "state_id INTEGER PRIMARY KEY, metadata_id INTEGER, state TEXT, "
+            "attributes_id INTEGER, last_updated_ts REAL)"
+        )
+        metadata_ids: dict[str, int] = {}
+        attribute_ids: dict[str, int] = {}
+        for entity_id, state, ts, attrs in rows:
+            if entity_id not in metadata_ids:
+                cur = await conn.execute(
+                    "INSERT INTO states_meta (entity_id) VALUES (?)", (entity_id,)
+                )
+                metadata_ids[entity_id] = cur.lastrowid
+            attributes_id = None
+            if attrs is not None:
+                key = json.dumps(attrs, sort_keys=True)
+                if key not in attribute_ids:
+                    cur = await conn.execute(
+                        "INSERT INTO state_attributes (shared_attrs) VALUES (?)", (key,)
+                    )
+                    attribute_ids[key] = cur.lastrowid
+                attributes_id = attribute_ids[key]
+            await conn.execute(
+                "INSERT INTO states (metadata_id, state, attributes_id, last_updated_ts) "
+                "VALUES (?, ?, ?, ?)",
+                (metadata_ids[entity_id], state, attributes_id, ts.timestamp()),
+            )
+        await conn.commit()
+
+
+class TestExternalRecorderImporter:
+    async def test_seam_methods_delegate_to_reader(self, backend: SQLiteBackend) -> None:
+        reader = MagicMock()
+        reader.fetch_all_entity_ids = AsyncMock(return_value=["sensor.a"])
+        reader.fetch_earliest_state_time = AsyncMock(return_value=TS0)
+        reader.fetch_states = AsyncMock(return_value={})
+        hass = MagicMock()
+
+        importer = ExternalRecorderImporter(hass, backend, reader)
+
+        assert await importer._fetch_all_entity_ids() == ["sensor.a"]
+        assert await importer._fetch_earliest_state_time() == TS0
+        assert await importer._fetch_states(TS0, TS1, ["sensor.a"]) == {}
+        reader.fetch_states.assert_awaited_once_with(TS0, TS1, ["sensor.a"])
+
+    async def test_end_to_end_import_from_sqlite_recorder_backup(
+        self, backend: SQLiteBackend, tmp_path: Path
+    ) -> None:
+        recorder_db = tmp_path / "recorder_backup.db"
+        await _create_external_recorder_db(
+            recorder_db,
+            [
+                ("sensor.temp", "20", TS0, {"unit": "°C"}),
+                ("sensor.temp", "20", TS1, {"unit": "°C"}),
+                ("sensor.temp", "21", TS2, {"unit": "°C"}),
+            ],
+        )
+        reader = SQLiteExternalRecorderReader(recorder_db)
+        await reader.connect()
+        hass = MagicMock()
+        try:
+            importer = ExternalRecorderImporter(hass, backend, reader)
+            inserted = await importer.run(TS0, TS3)
+        finally:
+            await reader.close()
+
+        # "state" field: 20→21 = 2 intervals; "unit" field: constant = 1 interval
+        assert inserted == 3
+
+    async def test_end_to_end_is_idempotent(
+        self, backend: SQLiteBackend, tmp_path: Path
+    ) -> None:
+        recorder_db = tmp_path / "recorder_backup.db"
+        await _create_external_recorder_db(
+            recorder_db, [("sensor.temp", "20", TS0, None)]
+        )
+        hass = MagicMock()
+
+        reader1 = SQLiteExternalRecorderReader(recorder_db)
+        await reader1.connect()
+        try:
+            first = await ExternalRecorderImporter(hass, backend, reader1).run(TS0, TS1)
+        finally:
+            await reader1.close()
+
+        reader2 = SQLiteExternalRecorderReader(recorder_db)
+        await reader2.connect()
+        try:
+            second = await ExternalRecorderImporter(hass, backend, reader2).run(TS0, TS1)
+        finally:
+            await reader2.close()
+
+        assert first == 1
+        assert second == 0

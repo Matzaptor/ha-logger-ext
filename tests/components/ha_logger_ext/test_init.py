@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ha_logger_ext.const import (
@@ -16,8 +17,11 @@ from custom_components.ha_logger_ext.const import (
     CONF_EXCLUDE_ENTITIES,
     CONF_FLUSH_INTERVAL,
     CONF_QUEUE_MAX_SIZE,
+    DB_TYPE_MYSQL,
     DB_TYPE_SQLITE,
     DOMAIN,
+    SERVICE_IMPORT_FROM_EXTERNAL_DB,
+    SERVICE_IMPORT_FROM_RECORDER,
 )
 
 
@@ -267,6 +271,67 @@ class TestQueueBehavior:
             # This state change must not raise despite a full queue.
             hass.states.async_set("sensor.extra", "42")
             await hass.async_block_till_done()
+
+
+class TestImportServices:
+    async def test_import_from_recorder_service_registered(
+        self, hass: HomeAssistant, patched_factory
+    ) -> None:
+        entry = _make_entry(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert hass.services.has_service(DOMAIN, SERVICE_IMPORT_FROM_RECORDER)
+
+    async def test_import_from_external_db_service_registered(
+        self, hass: HomeAssistant, patched_factory
+    ) -> None:
+        entry = _make_entry(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert hass.services.has_service(DOMAIN, SERVICE_IMPORT_FROM_EXTERNAL_DB)
+
+    async def test_import_services_removed_on_unload(
+        self, hass: HomeAssistant, patched_factory
+    ) -> None:
+        entry = _make_entry(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        assert not hass.services.has_service(DOMAIN, SERVICE_IMPORT_FROM_RECORDER)
+        assert not hass.services.has_service(DOMAIN, SERVICE_IMPORT_FROM_EXTERNAL_DB)
+
+    async def test_import_from_external_db_missing_server_fields_raises(
+        self, hass: HomeAssistant, patched_factory
+    ) -> None:
+        entry = _make_entry(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        with pytest.raises(ServiceValidationError):
+            await hass.services.async_call(
+                DOMAIN,
+                SERVICE_IMPORT_FROM_EXTERNAL_DB,
+                {CONF_DB_TYPE: DB_TYPE_MYSQL},
+                blocking=True,
+            )
+
+    async def test_import_from_external_db_missing_sqlite_path_raises(
+        self, hass: HomeAssistant, patched_factory
+    ) -> None:
+        entry = _make_entry(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        with pytest.raises(ServiceValidationError):
+            await hass.services.async_call(
+                DOMAIN,
+                SERVICE_IMPORT_FROM_EXTERNAL_DB,
+                {CONF_DB_TYPE: DB_TYPE_SQLITE},
+                blocking=True,
+            )
 
 
 class TestFlushRollback:

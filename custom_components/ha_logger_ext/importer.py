@@ -7,6 +7,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
+from .external_recorder_reader import ExternalRecorderReader
 from .storage.base import ObservationRecord, StorageBackend
 from .storage.serialization import serialize, values_equal
 from .storage.uuid7 import uuid7
@@ -264,3 +265,36 @@ class RecorderImporter:
             skipped,
         )
         return inserted, skipped
+
+
+class ExternalRecorderImporter(RecorderImporter):
+    """Imports historical data from an external database holding an HA recorder backup.
+
+    Reuses RecorderImporter's chunking, RLE compression, and idempotent-insert
+    logic unchanged, delegating state retrieval to an ExternalRecorderReader
+    instead of the local HA recorder. The caller owns the reader's connection
+    lifecycle (connect() before running, close() after).
+    """
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        backend: StorageBackend,
+        reader: ExternalRecorderReader,
+    ) -> None:
+        super().__init__(hass, backend)
+        self._reader = reader
+
+    async def _fetch_all_entity_ids(self) -> list[str]:
+        return await self._reader.fetch_all_entity_ids()
+
+    async def _fetch_earliest_state_time(self) -> datetime | None:
+        return await self._reader.fetch_earliest_state_time()
+
+    async def _fetch_states(
+        self,
+        start: datetime,
+        end: datetime,
+        entity_ids: list[str],
+    ) -> dict[str, list[Any]]:
+        return await self._reader.fetch_states(start, end, entity_ids)

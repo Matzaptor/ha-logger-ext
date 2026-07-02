@@ -43,3 +43,4 @@ DEFAULT_QUEUE_MAX_SIZE = 10_000   # max buffered snapshots before dropping
 
 # Services
 SERVICE_IMPORT_FROM_RECORDER = "import_from_recorder"
+SERVICE_IMPORT_FROM_EXTERNAL_DB = "import_from_external_db"

@@ -12,18 +12,29 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP, EVENT_STATE_CHANGED
 from homeassistant.core import Event, HomeAssistant, ServiceCall, callback
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryNotReady, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 
 from .const import (
+    CONF_DB_HOST,
+    CONF_DB_NAME,
+    CONF_DB_PASSWORD,
+    CONF_DB_PATH,
+    CONF_DB_PORT,
+    CONF_DB_TYPE,
+    CONF_DB_USERNAME,
     CONF_EXCLUDE_ATTRIBUTES,
     CONF_EXCLUDE_DOMAINS,
     CONF_EXCLUDE_ENTITIES,
     CONF_FLUSH_INTERVAL,
     CONF_QUEUE_MAX_SIZE,
+    DB_TYPE_MYSQL,
+    DB_TYPE_POSTGRESQL,
+    DB_TYPE_SQLITE,
     DEFAULT_FLUSH_INTERVAL,
     DEFAULT_QUEUE_MAX_SIZE,
     DOMAIN,
+    SERVICE_IMPORT_FROM_EXTERNAL_DB,
     SERVICE_IMPORT_FROM_RECORDER,
 )
 from .storage.base import ObservationRecord, StorageBackend
@@ -39,6 +50,29 @@ _SERVICE_IMPORT_SCHEMA = vol.Schema(
         vol.Optional("end_date"): cv.string,
         vol.Optional("entity_ids"): vol.All(cv.ensure_list, [cv.entity_id]),
     }
+)
+
+_SERVICE_IMPORT_EXTERNAL_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_DB_TYPE): vol.In([DB_TYPE_SQLITE, DB_TYPE_MYSQL, DB_TYPE_POSTGRESQL]),
+        vol.Optional(CONF_DB_PATH): cv.string,
+        vol.Optional(CONF_DB_HOST): cv.string,
+        vol.Optional(CONF_DB_PORT): cv.port,
+        vol.Optional(CONF_DB_NAME): cv.string,
+        vol.Optional(CONF_DB_USERNAME): cv.string,
+        vol.Optional(CONF_DB_PASSWORD): cv.string,
+        vol.Optional("start_date"): cv.string,
+        vol.Optional("end_date"): cv.string,
+        vol.Optional("entity_ids"): vol.All(cv.ensure_list, [cv.entity_id]),
+    }
+)
+
+_EXTERNAL_SERVER_REQUIRED_FIELDS = (
+    CONF_DB_HOST,
+    CONF_DB_PORT,
+    CONF_DB_NAME,
+    CONF_DB_USERNAME,
+    CONF_DB_PASSWORD,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -104,6 +138,69 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     entry.async_on_unload(
         lambda: hass.services.async_remove(DOMAIN, SERVICE_IMPORT_FROM_RECORDER)
+    )
+
+    async def _handle_import_external(call: ServiceCall) -> None:
+        from .external_recorder_reader import create_external_recorder_reader
+        from .importer import ExternalRecorderImporter
+
+        db_type = call.data[CONF_DB_TYPE]
+        if db_type == DB_TYPE_SQLITE and not call.data.get(CONF_DB_PATH):
+            raise ServiceValidationError("db_path is required when db_type is 'sqlite'")
+        if db_type in (DB_TYPE_MYSQL, DB_TYPE_POSTGRESQL):
+            missing = [
+                field
+                for field in _EXTERNAL_SERVER_REQUIRED_FIELDS
+                if not call.data.get(field)
+            ]
+            if missing:
+                raise ServiceValidationError(
+                    f"Missing required field(s) for db_type={db_type!r}: "
+                    f"{', '.join(missing)}"
+                )
+
+        now = datetime.now(timezone.utc)
+        raw_start: str | None = call.data.get("start_date")
+        raw_end: str | None = call.data.get("end_date")
+        entity_ids: list[str] | None = call.data.get("entity_ids")
+
+        start_time: datetime | None = (
+            datetime.fromisoformat(raw_start).replace(tzinfo=timezone.utc)
+            if raw_start
+            else None
+        )
+        end_time = (
+            datetime.fromisoformat(raw_end).replace(tzinfo=timezone.utc)
+            if raw_end
+            else now
+        )
+
+        reader = create_external_recorder_reader(db_type, dict(call.data))
+        importer = ExternalRecorderImporter(hass, coordinator.backend, reader)
+
+        async def _run() -> None:
+            coordinator.async_set_importing(True)
+            try:
+                await reader.connect()
+                try:
+                    count = await importer.run(start_time, end_time, entity_ids or None)
+                    coordinator.async_set_importing(False, count)
+                finally:
+                    await reader.close()
+            except Exception:
+                _LOGGER.exception("import_from_external_db task failed")
+                coordinator.async_set_importing(False)
+
+        hass.async_create_task(_run())
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_IMPORT_FROM_EXTERNAL_DB,
+        _handle_import_external,
+        schema=_SERVICE_IMPORT_EXTERNAL_SCHEMA,
+    )
+    entry.async_on_unload(
+        lambda: hass.services.async_remove(DOMAIN, SERVICE_IMPORT_FROM_EXTERNAL_DB)
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
