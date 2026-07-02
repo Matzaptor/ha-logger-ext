@@ -34,3 +34,110 @@ import_from_recorder:
       selector:
         entity:
           multiple: true
+
+import_from_external_db:
+  name: Import from External Database
+  description: >
+    Import historical entity states from an external database that holds a
+    backup of a Home Assistant Recorder database (not this integration's own
+    storage). Only the modern, normalized Recorder schema (states_meta +
+    state_attributes, HA 2023.4+) is supported; older backups fail with a
+    clear error. Only time ranges with no existing data are imported, so the
+    service is safe to run multiple times (idempotent and resumable).
+    Connection parameters are used only for this call and are not stored.
+  fields:
+    db_type:
+      name: Database type
+      description: Type of the external database.
+      required: true
+      example: mysql
+      selector:
+        select:
+          options:
+            - sqlite
+            - mysql
+            - postgresql
+    db_path:
+      name: Database file path
+      description: >
+        Path to the SQLite recorder backup file. Required when db_type is
+        "sqlite".
+      required: false
+      example: "/backup/home-assistant_v2.db"
+      selector:
+        text:
+    db_host:
+      name: Host
+      description: >
+        Database server hostname or IP address. Required when db_type is
+        "mysql" or "postgresql".
+      required: false
+      example: "192.168.1.10"
+      selector:
+        text:
+    db_port:
+      name: Port
+      description: >
+        Database server port. Required when db_type is "mysql" or
+        "postgresql".
+      required: false
+      example: 3306
+      selector:
+        number:
+          min: 1
+          max: 65535
+          mode: box
+    db_name:
+      name: Database name
+      description: >
+        Database name. Required when db_type is "mysql" or "postgresql".
+      required: false
+      example: homeassistant
+      selector:
+        text:
+    db_username:
+      name: Username
+      description: >
+        Database username. Required when db_type is "mysql" or
+        "postgresql". A read-only user is recommended.
+      required: false
+      example: readonly_user
+      selector:
+        text:
+    db_password:
+      name: Password
+      description: >
+        Database password. Required when db_type is "mysql" or
+        "postgresql".
+      required: false
+      selector:
+        text:
+          type: password
+    start_date:
+      name: Start date
+      description: >
+        Earliest date to import. Defaults to the oldest state available in
+        the external database.
+      required: false
+      example: "2022-01-01"
+      selector:
+        date:
+    end_date:
+      name: End date
+      description: >
+        Latest date to import. Defaults to today.
+      required: false
+      example: "2024-12-31"
+      selector:
+        date:
+    entity_ids:
+      name: Entity IDs
+      description: >
+        Entity IDs to import. Leave empty to import all entities.
+      required: false
+      example:
+        - sensor.temperature
+        - sensor.humidity
+      selector:
+        entity:
+          multiple: true

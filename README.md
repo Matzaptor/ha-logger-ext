@@ -223,10 +223,43 @@ If you have months or years of history in the built-in HA Recorder, you can back
 
 The import is **safe to run multiple times**. Before inserting each interval, it checks whether an overlapping observation already exists in ha_logger_ext. If the import is interrupted (e.g. HA restart), re-running it skips already-imported time ranges and continues from the first gap.
 
+## Importing historical data from an external database (recorder backup)
+
+If you have a backup of a **Home Assistant Recorder database** sitting on a separate server (for example an old instance's MySQL export), you can import it directly with the **Import from External Database** service, without connecting it to a live HA instance first.
+
+### How it works
+
+1. Go to **Developer tools → Services** and call `ha_logger_ext.import_from_external_db`, providing `db_type` (`sqlite`, `mysql`, or `postgresql`) and the matching connection parameters.
+2. The service connects read-only to the external database, queries it for the requested time range, compresses consecutive equal values into validity-range intervals (RLE), and inserts only time ranges that do not already exist in your ha_logger_ext database.
+3. Progress is logged at INFO level (`Logger: ha_logger_ext.importer`).
+
+This service reads a backup of **another** Home Assistant instance's Recorder database — not this integration's own storage. Only the modern, normalized Recorder schema (HA 2023.4+, with `states_meta` and `state_attributes` tables) is supported; older backups fail explicitly with a clear error instead of importing partial or incorrect data.
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `db_type` | `sqlite` \| `mysql` \| `postgresql` | yes | Type of the external database |
+| `db_path` | string | only for `sqlite` | Path to the recorder backup file |
+| `db_host` | string | only for `mysql`/`postgresql` | Database server hostname |
+| `db_port` | number | only for `mysql`/`postgresql` | Database server port |
+| `db_name` | string | only for `mysql`/`postgresql` | Database name |
+| `db_username` | string | only for `mysql`/`postgresql` | Database username (a read-only user is recommended) |
+| `db_password` | string | only for `mysql`/`postgresql` | Database password |
+| `start_date` | ISO 8601 string | no | Earliest date to import, defaults to the oldest state in the source |
+| `end_date` | ISO 8601 string | no | Latest date to import, defaults to today |
+| `entity_ids` | list of entity IDs | no | Restrict import to specific entities |
+
+Connection parameters are used only for the duration of the call and are not persisted anywhere by ha_logger_ext. They will, however, appear in Home Assistant's own service-call history and in any automation that calls this service — treat this the same as any other HA service with a password field.
+
 ## Known limitations
 
 - DuckDB backend is temporarily disabled — it crashes the Python interpreter on shutdown
   under Python 3.14. Selecting `duckdb` raises a clear configuration error.
+- `import_from_external_db` only supports HA Recorder backups using the 2023.4+ schema
+  generation (`states_meta`/`state_attributes` normalized tables). Older recorder schema
+  generations are not supported and raise a clear error instead of importing wrong or
+  partial data.
 - No data retention policy yet — the database grows indefinitely.
 - No export tooling yet — query the database file directly (SQLite) or use any SQL client (MySQL/PostgreSQL).
 
