@@ -291,6 +291,43 @@ class TestMySQLExternalRecorderReader:
         assert params[-2:] == ("sensor.a", "sensor.b")
         assert states["sensor.a"][0].attributes == {"unit": "C"}
 
+    async def test_connect_passes_connect_timeout(self) -> None:
+        cur = MagicMock()
+        cur.execute = AsyncMock()
+        cur.fetchone = AsyncMock(return_value=(1,))
+        conn = MagicMock()
+        conn.cursor = MagicMock(side_effect=lambda: _DualMock(cur))
+        pool = MagicMock()
+        pool.acquire = MagicMock(side_effect=lambda: _DualMock(conn))
+        mysql_module = _make_aiomysql_module(pool)
+
+        with patch.dict(sys.modules, {"aiomysql": mysql_module}):
+            reader = self._reader()
+            await reader.connect()
+
+        assert mysql_module.create_pool.call_args.kwargs["connect_timeout"] == 10
+
+    async def test_query_timeout_raises_clear_error(self) -> None:
+        cur = MagicMock()
+        cur.execute = AsyncMock()
+        cur.fetchone = AsyncMock(return_value=(1,))
+        cur.fetchall = AsyncMock(return_value=[])
+        conn = MagicMock()
+        conn.cursor = MagicMock(side_effect=lambda: _DualMock(cur))
+        pool = MagicMock()
+        pool.acquire = MagicMock(side_effect=lambda: _DualMock(conn))
+
+        with patch.dict(sys.modules, {"aiomysql": _make_aiomysql_module(pool)}):
+            reader = self._reader()
+            await reader.connect()
+
+            with patch(
+                "custom_components.ha_recorder_ext.external_recorder_reader.asyncio.wait_for",
+                AsyncMock(side_effect=TimeoutError),
+            ):
+                with pytest.raises(TimeoutError, match="localhost:3306"):
+                    await reader.fetch_all_entity_ids()
+
 
 class TestPostgreSQLExternalRecorderReader:
     def _reader(self) -> PostgreSQLExternalRecorderReader:
@@ -334,6 +371,20 @@ class TestPostgreSQLExternalRecorderReader:
         args = conn.fetch.call_args.args
         assert args[-1] == ["sensor.a", "sensor.b"]
         assert states["sensor.a"][0].attributes == {"unit": "C"}
+
+    async def test_connect_passes_timeout_params(self) -> None:
+        conn = MagicMock()
+        conn.fetchrow = AsyncMock(return_value={"?column?": 1})
+        pool = MagicMock()
+        pool.acquire = MagicMock(side_effect=lambda: _DualMock(conn))
+
+        create_pool = AsyncMock(return_value=pool)
+        with patch("asyncpg.create_pool", create_pool):
+            reader = self._reader()
+            await reader.connect()
+
+        assert create_pool.call_args.kwargs["timeout"] == 10
+        assert create_pool.call_args.kwargs["command_timeout"] == 300
 
 
 class TestCreateExternalRecorderReader:
