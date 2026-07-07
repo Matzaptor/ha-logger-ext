@@ -152,6 +152,49 @@ class _FakeImporter(RecorderImporter):
         return self._all_entity_ids
 
 
+class _FakeExternalImporter(ExternalRecorderImporter):
+    """ExternalRecorderImporter variant that returns a fixed states map, no real reader."""
+
+    def __init__(
+        self,
+        hass: Any,
+        backend: SQLiteBackend,
+        states_map: dict[str, list[Any]],
+        earliest: datetime | None = None,
+        all_entity_ids: list[str] | None = None,
+    ) -> None:
+        super().__init__(hass, backend, reader=MagicMock())
+        self._states_map = states_map
+        self._earliest = earliest
+        self._all_entity_ids = all_entity_ids if all_entity_ids is not None else list(states_map)
+
+    async def _fetch_states(
+        self,
+        start: datetime,
+        end: datetime,
+        entity_ids: list[str],
+    ) -> dict[str, list[Any]]:
+        return self._states_map
+
+    async def _fetch_earliest_state_time(self) -> datetime | None:
+        return self._earliest
+
+    async def _fetch_all_entity_ids(self) -> list[str]:
+        return self._all_entity_ids
+
+
+class _FailingFetchImporter(_FakeImporter):
+    """_FakeImporter variant whose _fetch_states always raises."""
+
+    async def _fetch_states(
+        self,
+        start: datetime,
+        end: datetime,
+        entity_ids: list[str],
+    ) -> dict[str, list[Any]]:
+        raise RuntimeError("boom")
+
+
 class _RecordingFakeImporter(_FakeImporter):
     """_FakeImporter variant that records every (start, end) window passed to _fetch_states."""
 
@@ -436,7 +479,62 @@ class TestImporterLogging:
         )
         with caplog.at_level(logging.DEBUG, logger=_IMPORTER_LOGGER):
             await importer.run(TS0, TS1, entity_ids=["sensor.temp"])
-        assert "no data returned by recorder" in caplog.text
+        assert "0 entities with data" in caplog.text
+
+    async def test_log_prefix_reflects_which_service_is_running(
+        self, backend: SQLiteBackend, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        states = [_state("sensor.temp", "20", TS0)]
+        hass = MagicMock()
+        importer = _FakeExternalImporter(hass, backend, {"sensor.temp": states})
+        with caplog.at_level(logging.INFO, logger=_IMPORTER_LOGGER):
+            await importer.run(TS0, TS1)
+        assert "import_from_external_db: starting" in caplog.text
+        assert "import_from_recorder:" not in caplog.text
+
+    async def test_entity_progress_log_within_heavy_chunk(
+        self, backend: SQLiteBackend, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        hass = MagicMock()
+        states_map = {
+            f"sensor.e{i}": [_state(f"sensor.e{i}", "20", TS0)] for i in range(30)
+        }
+        importer = _FakeImporter(hass, backend, states_map)
+        with caplog.at_level(logging.INFO, logger=_IMPORTER_LOGGER):
+            await importer.run(TS0, TS1)
+        assert "25/30 entities" in caplog.text
+
+    async def test_no_entity_progress_log_below_threshold(
+        self, backend: SQLiteBackend, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        hass = MagicMock()
+        states_map = {
+            f"sensor.e{i}": [_state(f"sensor.e{i}", "20", TS0)] for i in range(5)
+        }
+        importer = _FakeImporter(hass, backend, states_map)
+        with caplog.at_level(logging.INFO, logger=_IMPORTER_LOGGER):
+            await importer.run(TS0, TS1)
+        assert "entities, " not in caplog.text
+
+    async def test_fetch_states_failure_is_logged_with_chunk_context(
+        self, backend: SQLiteBackend, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        hass = MagicMock()
+        importer = _FailingFetchImporter(hass, backend, {}, all_entity_ids=["sensor.temp"])
+        with caplog.at_level(logging.ERROR, logger=_IMPORTER_LOGGER):
+            with pytest.raises(RuntimeError):
+                await importer.run(TS0, TS1, entity_ids=["sensor.temp"])
+        assert "failed fetching states for chunk" in caplog.text
+
+    async def test_import_entity_failure_is_logged_with_entity_context(
+        self, backend: SQLiteBackend, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        hass = MagicMock()
+        importer = _FakeImporter(hass, backend, {"sensor.bad": [object()]})
+        with caplog.at_level(logging.ERROR, logger=_IMPORTER_LOGGER):
+            with pytest.raises(AttributeError):
+                await importer.run(TS0, TS1)
+        assert "failed importing entity sensor.bad" in caplog.text
 
 
 # ---------------------------------------------------------------------------
