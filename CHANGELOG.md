@@ -7,6 +7,24 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.1.4] — 2026-07-07
+
+### Fixed
+
+- Audited every `except` block in the integration for silent failures. Two were
+  found: `RecorderImporter._fetch_all_entity_ids()` and `_fetch_earliest_state_time()`
+  silently returned an empty result (`[]` / `None`) if the `homeassistant.components.recorder`
+  import failed, with no log line at all — reported identically to a genuinely empty
+  recorder. Both now log an ERROR first, matching the sibling `_fetch_states()` method,
+  which already did this correctly.
+- `MySQLBackend`'s index-creation step caught *any* exception and unconditionally
+  logged it at DEBUG as "may already exist" — including real failures (e.g. permission
+  denied) that have nothing to do with the index already being there. It now checks the
+  actual MySQL error code (1061, duplicate key name) and only stays quiet for that
+  specific, expected case; anything else is now logged at WARNING.
+
+---
+
 ## [2.1.3] — 2026-07-07
 
 ### Fixed
