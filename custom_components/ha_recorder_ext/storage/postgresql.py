@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
@@ -167,7 +168,20 @@ class PostgreSQLBackend(StorageBackend):
             self._conn = None
             self._tx = None
         if self._pool is not None:
-            await self._pool.close()
+            try:
+                await asyncio.wait_for(
+                    self._pool.close(), timeout=_CONNECT_TIMEOUT_SECONDS
+                )
+            except TimeoutError:
+                # Don't let a stuck close() hang shutdown/cleanup or mask
+                # whatever error the caller may already be handling — the
+                # pool object is discarded either way.
+                _LOGGER.warning(
+                    "Timed out closing PostgreSQL storage backend pool at %s:%s after %ds",
+                    self._host,
+                    self._port,
+                    _CONNECT_TIMEOUT_SECONDS,
+                )
             self._pool = None
 
     async def _apply_migrations(self) -> None:

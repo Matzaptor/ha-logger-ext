@@ -182,7 +182,20 @@ class MySQLBackend(StorageBackend):
             self._conn = None
         if self._pool is not None:
             self._pool.close()
-            await self._pool.wait_closed()
+            try:
+                await asyncio.wait_for(
+                    self._pool.wait_closed(), timeout=_CONNECT_TIMEOUT_SECONDS
+                )
+            except TimeoutError:
+                # Don't let a stuck close() hang shutdown/cleanup or mask
+                # whatever error the caller may already be handling — the
+                # pool object is discarded either way.
+                _LOGGER.warning(
+                    "Timed out closing MySQL storage backend pool at %s:%s after %ds",
+                    self._host,
+                    self._port,
+                    _CONNECT_TIMEOUT_SECONDS,
+                )
             self._pool = None
 
     # ------------------------------------------------------------------
