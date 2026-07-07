@@ -7,6 +7,33 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.1.3] — 2026-07-07
+
+### Fixed
+
+- **Critical: `MySQLBackend` leaked a pooled connection on every non-transactional
+  write.** `_execute()` acquired a connection with `pool.acquire()` and released it
+  with a direct `conn.close()` instead of `pool.release(conn)`. Closing a
+  pool-acquired connection directly does not tell the pool it's free — the pool's
+  internal accounting keeps counting it as in use, permanently shrinking available
+  capacity by one on every call. `begin()`/`commit()`/`rollback()` (the live
+  recording flush transaction) had the identical bug. With the default pool size,
+  the pool would fully exhaust after roughly 10 such calls — at which point the next
+  `pool.acquire()` call blocked forever, with **no timeout protecting it** (2.1.1
+  only wrapped the query itself, not acquiring the connection to run it on) and no
+  query ever reaching the server to explain why. This is what a real stuck import
+  looked like: confirmed live against MariaDB, `SHOW FULL PROCESSLIST` showed nothing
+  on either server, because the code never got far enough to send a query at all.
+  `_execute()`, `begin()`, `commit()`, and `rollback()` now all properly acquire
+  through a shared helper and release back to the pool via `pool.release()`.
+- Acquiring a connection from the pool is now itself wrapped in a 10s timeout, so a
+  genuinely exhausted pool (leaked or otherwise) raises a clear, loggable
+  `TimeoutError` instead of hanging forever.
+- `PostgreSQLBackend` did not have this bug — its `commit()`/`rollback()` already used
+  `pool.release()` correctly, and its query timeout was already covered.
+
+---
+
 ## [2.1.2] — 2026-07-07
 
 ### Fixed
