@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
 
@@ -143,6 +144,20 @@ class PostgreSQLBackend(StorageBackend):
         self._conn: asyncpg.Connection | None = None
         self._tx: asyncpg.transaction.Transaction | None = None
         self._in_transaction = False
+        # The live-recording flush loop and the import service both hold a
+        # reference to this same backend instance and can run concurrently.
+        # self._conn/self._in_transaction are shared instance state: without
+        # this lock, an import call could observe a transaction opened by the
+        # flush loop and reuse its connection concurrently — asyncpg is not
+        # safe for concurrent use of one connection.
+        self._lock = asyncio.Lock()
+        # The task that currently owns the open transaction (if any). Only
+        # that task's own calls may bypass the lock while a transaction is
+        # open — a *different* task must never skip it just because
+        # self._in_transaction happens to be True, or it would reuse another
+        # task's transaction connection concurrently, which is the exact bug
+        # this locking exists to prevent.
+        self._transaction_owner: asyncio.Task[Any] | None = None
 
     async def initialize(self) -> None:
         try:
@@ -220,43 +235,89 @@ class PostgreSQLBackend(StorageBackend):
 
     async def begin(self) -> None:
         assert self._pool is not None
-        self._conn = await self._pool.acquire()
-        self._tx = self._conn.transaction()
-        await self._tx.start()
-        self._in_transaction = True
+        # Held until commit()/rollback() releases it — see _serialize().
+        await self._lock.acquire()
+        try:
+            try:
+                self._conn = await asyncio.wait_for(
+                    self._pool.acquire(), timeout=_CONNECT_TIMEOUT_SECONDS
+                )
+            except TimeoutError as err:
+                raise TimeoutError(
+                    f"Timed out acquiring a PostgreSQL storage backend "
+                    f"connection from the pool at {self._host}:{self._port} "
+                    f"after {_CONNECT_TIMEOUT_SECONDS}s (the pool may be "
+                    "exhausted)"
+                ) from err
+            assert self._conn is not None
+            self._tx = self._conn.transaction()
+            await self._tx.start()
+            self._in_transaction = True
+            self._transaction_owner = asyncio.current_task()
+        except Exception:
+            self._lock.release()
+            raise
 
     async def commit(self) -> None:
         assert self._tx is not None and self._conn is not None
-        await self._tx.commit()
-        await self._pool.release(self._conn)  # type: ignore[union-attr]
-        self._conn = None
-        self._tx = None
-        self._in_transaction = False
+        try:
+            await self._tx.commit()
+        finally:
+            await self._pool.release(self._conn)  # type: ignore[union-attr]
+            self._conn = None
+            self._tx = None
+            self._in_transaction = False
+            self._transaction_owner = None
+            self._lock.release()
 
     async def rollback(self) -> None:
         assert self._tx is not None and self._conn is not None
-        await self._tx.rollback()
-        await self._pool.release(self._conn)  # type: ignore[union-attr]
-        self._conn = None
-        self._tx = None
-        self._in_transaction = False
+        try:
+            await self._tx.rollback()
+        finally:
+            await self._pool.release(self._conn)  # type: ignore[union-attr]
+            self._conn = None
+            self._tx = None
+            self._in_transaction = False
+            self._transaction_owner = None
+            self._lock.release()
+
+    @asynccontextmanager
+    async def _serialize(self) -> AsyncIterator[None]:
+        """Hold the backend-wide lock unless the *current task* owns the open transaction.
+
+        The live-recording flush loop and the import service both hold a
+        reference to this same backend instance and can run concurrently.
+        Only the task that itself called begin() may bypass the lock while a
+        transaction is open (its own follow-up calls would otherwise
+        deadlock against the lock it's already holding) — any *other* task
+        must wait, or it would reuse that transaction's connection
+        concurrently, which is the exact bug this locking exists to prevent.
+        """
+        if self._transaction_owner is asyncio.current_task():
+            yield
+        else:
+            async with self._lock:
+                yield
 
     async def _execute(self, sql: str, *args: Any) -> None:
-        if self._in_transaction:
-            assert self._conn is not None
-            await self._conn.execute(sql, *args)
-            return
-        assert self._pool is not None
-        async with self._pool.acquire() as conn:
-            await conn.execute(sql, *args)
+        async with self._serialize():
+            if self._in_transaction:
+                assert self._conn is not None
+                await self._conn.execute(sql, *args)
+                return
+            assert self._pool is not None
+            async with self._pool.acquire() as conn:
+                await conn.execute(sql, *args)
 
     async def _fetchrow(self, sql: str, *args: Any) -> asyncpg.Record | None:
-        if self._in_transaction:
-            assert self._conn is not None
-            return await self._conn.fetchrow(sql, *args)
-        assert self._pool is not None
-        async with self._pool.acquire() as conn:
-            return await conn.fetchrow(sql, *args)
+        async with self._serialize():
+            if self._in_transaction:
+                assert self._conn is not None
+                return await self._conn.fetchrow(sql, *args)
+            assert self._pool is not None
+            async with self._pool.acquire() as conn:
+                return await conn.fetchrow(sql, *args)
 
     async def get_or_create_entity(self, entity_id: str, domain: str, ts: datetime) -> uuid.UUID:
         ts_str = _fmt(ts)

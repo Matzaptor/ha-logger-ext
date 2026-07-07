@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import sys
 import types
 import aiosqlite
@@ -374,6 +375,36 @@ class TestBatchTransactions:
         latest = await b.get_latest_observation(pk, "state")
         assert latest is None
         await b.close()
+
+    async def test_concurrent_call_waits_for_open_transaction(
+        self, tmp_path: Path
+    ) -> None:
+        """A concurrent read/write while a transaction is open (e.g. the live
+        flush loop's begin()...commit(), running concurrently with an import
+        using the same backend instance) must wait for commit()/rollback(),
+        not run interleaved with it."""
+        b = SQLiteBackend(tmp_path / "test.db")
+        await b.initialize()
+
+        await b.begin()
+
+        order: list[str] = []
+
+        async def _concurrent_write() -> None:
+            await b.get_or_create_entity("sensor.other", "sensor", TS)
+            order.append("write_done")
+
+        task = asyncio.create_task(_concurrent_write())
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert not task.done(), "concurrent call must block while the transaction is open"
+
+        order.append("commit")
+        await b.commit()
+        await task
+        await b.close()
+
+        assert order == ["commit", "write_done"]
 
 
 class TestCreateBackend:

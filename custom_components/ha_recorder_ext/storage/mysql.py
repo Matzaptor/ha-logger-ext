@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
 
@@ -160,6 +161,21 @@ class MySQLBackend(StorageBackend):
         # Active connection held during an explicit transaction.
         self._conn: aiomysql.Connection | None = None
         self._in_transaction = False
+        # The live-recording flush loop and the import service both hold a
+        # reference to this same backend instance and can run concurrently.
+        # self._conn/self._in_transaction are shared instance state: without
+        # this lock, an import call could observe a transaction opened by the
+        # flush loop and reuse its connection concurrently — aiomysql is not
+        # safe for concurrent use of one connection (two coroutines reading
+        # the socket at once corrupts the wire protocol for both).
+        self._lock = asyncio.Lock()
+        # The task that currently owns the open transaction (if any). Only
+        # that task's own calls may bypass the lock while a transaction is
+        # open — a *different* task must never skip it just because
+        # self._in_transaction happens to be True, or it would reuse another
+        # task's transaction connection concurrently, which is the exact bug
+        # this locking exists to prevent.
+        self._transaction_owner: asyncio.Task[Any] | None = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -277,23 +293,56 @@ class MySQLBackend(StorageBackend):
     # ------------------------------------------------------------------
 
     async def begin(self) -> None:
-        self._conn = await self._acquire()
-        await self._with_timeout(self._conn.begin())
-        self._in_transaction = True
+        # Held until commit()/rollback() releases it — see _serialize().
+        await self._lock.acquire()
+        try:
+            self._conn = await self._acquire()
+            await self._with_timeout(self._conn.begin())
+            self._in_transaction = True
+            self._transaction_owner = asyncio.current_task()
+        except Exception:
+            self._lock.release()
+            raise
 
     async def commit(self) -> None:
         assert self._conn is not None
-        await self._with_timeout(self._conn.commit())
-        self._release_active_conn()
+        try:
+            await self._with_timeout(self._conn.commit())
+        finally:
+            self._release_active_conn()
+            self._transaction_owner = None
+            self._lock.release()
 
     async def rollback(self) -> None:
         assert self._conn is not None
-        await self._with_timeout(self._conn.rollback())
-        self._release_active_conn()
+        try:
+            await self._with_timeout(self._conn.rollback())
+        finally:
+            self._release_active_conn()
+            self._transaction_owner = None
+            self._lock.release()
 
     # ------------------------------------------------------------------
     # Internal connection helper
     # ------------------------------------------------------------------
+
+    @asynccontextmanager
+    async def _serialize(self) -> AsyncIterator[None]:
+        """Hold the backend-wide lock unless the *current task* owns the open transaction.
+
+        The live-recording flush loop and the import service both hold a
+        reference to this same backend instance and can run concurrently.
+        Only the task that itself called begin() may bypass the lock while a
+        transaction is open (its own follow-up calls would otherwise
+        deadlock against the lock it's already holding) — any *other* task
+        must wait, or it would reuse that transaction's connection
+        concurrently, which is the exact bug this locking exists to prevent.
+        """
+        if self._transaction_owner is asyncio.current_task():
+            yield
+        else:
+            async with self._lock:
+                yield
 
     def _active_conn(self) -> aiomysql.Connection:
         """Return the transaction connection or raise if not in a transaction."""
@@ -344,39 +393,41 @@ class MySQLBackend(StorageBackend):
         self, sql: str, params: tuple | None = None
     ) -> aiomysql.cursors.Cursor:
         """Execute a statement on the active connection (transaction mode) or acquire a temporary one."""
-        if self._in_transaction:
-            conn = self._active_conn()
-            cur = await conn.cursor()
-            await self._with_timeout(cur.execute(sql, params or ()))
-            return cur
+        async with self._serialize():
+            if self._in_transaction:
+                conn = self._active_conn()
+                cur = await conn.cursor()
+                await self._with_timeout(cur.execute(sql, params or ()))
+                return cur
 
-        assert self._pool is not None
-        conn = await self._acquire()
-        try:
-            cur = await conn.cursor()
-            await self._with_timeout(cur.execute(sql, params or ()))
-            await conn.commit()
-            return cur
-        finally:
-            self._pool.release(conn)
+            assert self._pool is not None
+            conn = await self._acquire()
+            try:
+                cur = await conn.cursor()
+                await self._with_timeout(cur.execute(sql, params or ()))
+                await conn.commit()
+                return cur
+            finally:
+                self._pool.release(conn)
 
     async def _fetchone(
         self, sql: str, params: tuple | None = None
     ) -> tuple | None:
-        if self._in_transaction:
-            conn = self._active_conn()
-            async with conn.cursor() as cur:
-                await self._with_timeout(cur.execute(sql, params or ()))
-                return await cur.fetchone()
+        async with self._serialize():
+            if self._in_transaction:
+                conn = self._active_conn()
+                async with conn.cursor() as cur:
+                    await self._with_timeout(cur.execute(sql, params or ()))
+                    return await cur.fetchone()
 
-        assert self._pool is not None
-        conn = await self._acquire()
-        try:
-            async with conn.cursor() as cur:
-                await self._with_timeout(cur.execute(sql, params or ()))
-                return await cur.fetchone()
-        finally:
-            self._pool.release(conn)
+            assert self._pool is not None
+            conn = await self._acquire()
+            try:
+                async with conn.cursor() as cur:
+                    await self._with_timeout(cur.execute(sql, params or ()))
+                    return await cur.fetchone()
+            finally:
+                self._pool.release(conn)
 
     # ------------------------------------------------------------------
     # Entity management

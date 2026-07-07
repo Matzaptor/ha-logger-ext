@@ -1,6 +1,7 @@
 """Behavioral tests for MySQLBackend (aiomysql fully mocked)."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import sys
 import types
@@ -745,6 +746,38 @@ class TestMySQLBackend:
         assert backend._in_transaction is True
         assert backend._conn is conn
         conn.begin.assert_called_once()
+
+    async def test_concurrent_call_waits_for_open_transaction(self) -> None:
+        """A concurrent read/write while a transaction is open (e.g. the live
+        flush loop's begin()...commit(), running concurrently with an import)
+        must wait for commit()/rollback(), not interleave with the
+        transaction's connection — this is the exact race that used to
+        corrupt aiomysql's wire protocol (RuntimeError: readexactly() called
+        while another coroutine is already waiting for incoming data)."""
+        cur, conn, pool, aiomysql_mock = _default_mocks()
+        cur.fetchone = AsyncMock(return_value=(1,))
+
+        backend = _backend()
+        with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
+            await backend.initialize()
+            await backend.begin()
+
+            order: list[str] = []
+
+            async def _concurrent_fetch() -> None:
+                await backend._fetchone("SELECT 1")
+                order.append("fetch_done")
+
+            task = asyncio.create_task(_concurrent_fetch())
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            assert not task.done(), "concurrent call must block while the transaction is open"
+
+            order.append("commit")
+            await backend.commit()
+            await task
+
+        assert order == ["commit", "fetch_done"]
 
     async def test_commit_clears_transaction_state(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
