@@ -1,6 +1,7 @@
 """Behavioral tests for MySQLBackend (aiomysql fully mocked)."""
 from __future__ import annotations
 
+import logging
 import sys
 import types
 import uuid
@@ -299,12 +300,14 @@ class TestMySQLBackend:
         conn.rollback.assert_called_once()
 
     async def test_initialize_index_creation_failure_is_swallowed(self) -> None:
+        """A real "duplicate index name" error (MySQL errno 1061) is expected
+        on reconnect and must not abort initialization."""
         cur, conn, pool, aiomysql_mock = _default_mocks()
         cur.fetchone = AsyncMock(return_value=None)  # fresh schema
 
         def _exec_side_effect(sql: str, params: tuple = ()) -> None:
             if "CREATE INDEX" in sql:
-                raise Exception("duplicate index")
+                raise Exception(1061, "Duplicate key name 'idx_obs_entity_field'")
 
         cur.execute = AsyncMock(side_effect=_exec_side_effect)
 
@@ -313,6 +316,30 @@ class TestMySQLBackend:
             await backend.initialize()  # must not raise despite index errors
 
         conn.commit.assert_called_once()  # still commits after swallowed failures
+
+    async def test_initialize_unexpected_index_error_logs_warning(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A non-"already exists" index failure (e.g. permission denied) must
+        be logged loudly (WARNING), not silently swallowed at DEBUG like the
+        expected "already exists" case — an unrelated failure there shouldn't
+        get misreported as something benign."""
+        cur, conn, pool, aiomysql_mock = _default_mocks()
+        cur.fetchone = AsyncMock(return_value=None)  # fresh schema
+
+        def _exec_side_effect(sql: str, params: tuple = ()) -> None:
+            if "CREATE INDEX" in sql:
+                raise Exception(1142, "INDEX command denied to user")
+
+        cur.execute = AsyncMock(side_effect=_exec_side_effect)
+
+        backend = _backend()
+        with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
+            with caplog.at_level(logging.WARNING, logger="custom_components.ha_recorder_ext.storage.mysql"):
+                await backend.initialize()  # must still not raise
+
+        assert "Index creation failed and was skipped" in caplog.text
+        assert "command denied" in caplog.text
 
     async def test_initialize_runs_registered_migration(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()

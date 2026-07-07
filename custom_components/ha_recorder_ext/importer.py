@@ -90,6 +90,12 @@ class RecorderImporter:
             from homeassistant.components.recorder.db_schema import States
             from sqlalchemy import distinct, select
         except ImportError:
+            _LOGGER.error(
+                "%s: recorder component is not available; treating as "
+                "'no entities found' — this is very likely wrong, not an "
+                "actually empty recorder",
+                self._LOG_PREFIX,
+            )
             return []
 
         recorder = get_instance(self._hass)
@@ -115,6 +121,12 @@ class RecorderImporter:
             from homeassistant.components.recorder.db_schema import States
             from sqlalchemy import func, select
         except ImportError:
+            _LOGGER.error(
+                "%s: recorder component is not available; treating as "
+                "'recorder has no states' — this is very likely wrong, not "
+                "an actually empty recorder",
+                self._LOG_PREFIX,
+            )
             return None
 
         recorder = get_instance(self._hass)

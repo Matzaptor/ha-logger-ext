@@ -134,6 +134,14 @@ def _fmt(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).isoformat()
 
 
+_MYSQL_ERR_DUP_KEYNAME = 1061
+
+
+def _is_duplicate_index_error(err: Exception) -> bool:
+    """True if err is MySQL's "index already exists" (errno 1061), not a real failure."""
+    return bool(err.args) and err.args[0] == _MYSQL_ERR_DUP_KEYNAME
+
+
 class MySQLBackend(StorageBackend):
     def __init__(
         self,
@@ -221,10 +229,19 @@ class MySQLBackend(StorageBackend):
                     for sql in _SQL_CREATE_INDEXES:
                         try:
                             await cur.execute(sql)
-                        except Exception:  # index may already exist on reconnect
-                            _LOGGER.debug(
-                                "Skipping index creation (may already exist): %s", sql
-                            )
+                        except Exception as err:
+                            if _is_duplicate_index_error(err):
+                                _LOGGER.debug(
+                                    "Skipping index creation (already exists): %s", sql
+                                )
+                            else:
+                                _LOGGER.warning(
+                                    "Index creation failed and was skipped — queries "
+                                    "may be slower than expected until this is fixed "
+                                    "(%s): %s",
+                                    err,
+                                    sql,
+                                )
                     await cur.execute(_SQL_INSERT_SCHEMA_VERSION, (_SCHEMA_VERSION,))
                     await conn.commit()
                     return
