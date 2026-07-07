@@ -175,9 +175,26 @@ class TestMySQLBackend:
             password="pass",
             autocommit=False,
             charset="utf8mb4",
+            connect_timeout=10,
         )
         conn.commit.assert_called_once()
         assert backend._pool is pool
+
+    async def test_query_timeout_raises_clear_error(self) -> None:
+        cur, conn, pool, aiomysql_mock = _default_mocks()
+        cur.fetchone = AsyncMock(return_value=(1,))  # schema already current
+
+        backend = _backend()
+        with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
+            await backend.initialize()
+
+            async def _timeout(coro, timeout):  # noqa: ARG001 - matches wait_for's signature
+                coro.close()
+                raise TimeoutError
+
+            with patch.object(_mysql_module.asyncio, "wait_for", _timeout):
+                with pytest.raises(TimeoutError, match="localhost:3306"):
+                    await backend.get_or_create_entity("sensor.x", "sensor", TS)
 
     async def test_initialize_no_op_when_schema_already_current(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
