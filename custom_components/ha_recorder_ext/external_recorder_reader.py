@@ -212,7 +212,9 @@ class MySQLExternalRecorderReader(ExternalRecorderReader):
         self._password = password
         self._pool: Any = None
 
-    async def _execute(self, cur: Any, sql: str, params: tuple | None = None) -> None:
+    async def _execute(
+        self, cur: Any, sql: str, params: tuple[Any, ...] | None = None
+    ) -> None:
         """Run one statement with a hard timeout so a dead connection errors instead of hanging."""
         coro = cur.execute(sql, params) if params is not None else cur.execute(sql)
         try:

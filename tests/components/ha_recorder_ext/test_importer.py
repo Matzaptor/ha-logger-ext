@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -514,7 +515,9 @@ class TestImporterLogging:
         importer = _FakeImporter(hass, backend, states_map)
         with caplog.at_level(logging.INFO, logger=_IMPORTER_LOGGER):
             await importer.run(TS0, TS1)
-        assert "entities, " not in caplog.text
+        # The "starting — N entities, window ..." line is expected; only the
+        # per-entity "processed/total entities" progress line must be absent.
+        assert re.search(r"\d+/\d+ entities", caplog.text) is None
 
     async def test_fetch_states_failure_is_logged_with_chunk_context(
         self, backend: SQLiteBackend, caplog: pytest.LogCaptureFixture

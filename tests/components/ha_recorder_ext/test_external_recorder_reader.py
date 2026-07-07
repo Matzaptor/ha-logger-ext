@@ -317,13 +317,17 @@ class TestMySQLExternalRecorderReader:
         pool = MagicMock()
         pool.acquire = MagicMock(side_effect=lambda: _DualMock(conn))
 
+        async def _timeout(coro, timeout):  # noqa: ARG001 - matches asyncio.wait_for's signature
+            coro.close()
+            raise TimeoutError
+
         with patch.dict(sys.modules, {"aiomysql": _make_aiomysql_module(pool)}):
             reader = self._reader()
             await reader.connect()
 
             with patch(
                 "custom_components.ha_recorder_ext.external_recorder_reader.asyncio.wait_for",
-                AsyncMock(side_effect=TimeoutError),
+                _timeout,
             ):
                 with pytest.raises(TimeoutError, match="localhost:3306"):
                     await reader.fetch_all_entity_ids()
