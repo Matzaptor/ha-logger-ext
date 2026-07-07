@@ -134,6 +134,14 @@ def _fmt(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).isoformat()
 
 
+_MYSQL_ERR_DUP_KEYNAME = 1061
+
+
+def _is_duplicate_index_error(err: Exception) -> bool:
+    """True if err is MySQL's "index already exists" (errno 1061), not a real failure."""
+    return bool(err.args) and err.args[0] == _MYSQL_ERR_DUP_KEYNAME
+
+
 class MySQLBackend(StorageBackend):
     def __init__(
         self,
@@ -221,10 +229,19 @@ class MySQLBackend(StorageBackend):
                     for sql in _SQL_CREATE_INDEXES:
                         try:
                             await cur.execute(sql)
-                        except Exception:  # index may already exist on reconnect
-                            _LOGGER.debug(
-                                "Skipping index creation (may already exist): %s", sql
-                            )
+                        except Exception as err:
+                            if _is_duplicate_index_error(err):
+                                _LOGGER.debug(
+                                    "Skipping index creation (already exists): %s", sql
+                                )
+                            else:
+                                _LOGGER.warning(
+                                    "Index creation failed and was skipped — queries "
+                                    "may be slower than expected until this is fixed "
+                                    "(%s): %s",
+                                    err,
+                                    sql,
+                                )
                     await cur.execute(_SQL_INSERT_SCHEMA_VERSION, (_SCHEMA_VERSION,))
                     await conn.commit()
                     return
@@ -260,24 +277,19 @@ class MySQLBackend(StorageBackend):
     # ------------------------------------------------------------------
 
     async def begin(self) -> None:
-        assert self._pool is not None
-        self._conn = await self._pool.acquire()
+        self._conn = await self._acquire()
         await self._with_timeout(self._conn.begin())
         self._in_transaction = True
 
     async def commit(self) -> None:
         assert self._conn is not None
-        await self._conn.commit()
-        self._conn.close()
-        self._conn = None
-        self._in_transaction = False
+        await self._with_timeout(self._conn.commit())
+        self._release_active_conn()
 
     async def rollback(self) -> None:
         assert self._conn is not None
-        await self._conn.rollback()
-        self._conn.close()
-        self._conn = None
-        self._in_transaction = False
+        await self._with_timeout(self._conn.rollback())
+        self._release_active_conn()
 
     # ------------------------------------------------------------------
     # Internal connection helper
@@ -287,6 +299,37 @@ class MySQLBackend(StorageBackend):
         """Return the transaction connection or raise if not in a transaction."""
         assert self._conn is not None, "No active transaction connection."
         return self._conn
+
+    def _release_active_conn(self) -> None:
+        assert self._pool is not None and self._conn is not None
+        self._pool.release(self._conn)
+        self._conn = None
+        self._in_transaction = False
+
+    async def _acquire(self) -> aiomysql.Connection:
+        """Acquire a pool connection with a timeout.
+
+        Using the pool's `async with` form (or a bare `await pool.acquire()`
+        followed by `conn.close()`) leaves no way to bound how long we wait,
+        and closing a pool-acquired connection directly — instead of
+        releasing it back via `pool.release()` — permanently leaks it from
+        the pool's accounting. Every non-transactional write used to do
+        exactly that, silently shrinking the pool by one connection each
+        time until it was fully exhausted and every future acquire hung
+        forever with no timeout and no query ever reaching the server to
+        explain why.
+        """
+        assert self._pool is not None
+        try:
+            return await asyncio.wait_for(
+                self._pool.acquire(), timeout=_CONNECT_TIMEOUT_SECONDS
+            )
+        except TimeoutError as err:
+            raise TimeoutError(
+                f"Timed out acquiring a MySQL storage backend connection from "
+                f"the pool at {self._host}:{self._port} after "
+                f"{_CONNECT_TIMEOUT_SECONDS}s (the pool may be exhausted)"
+            ) from err
 
     async def _with_timeout(self, coro: Awaitable[Any]) -> None:
         try:
@@ -308,14 +351,14 @@ class MySQLBackend(StorageBackend):
             return cur
 
         assert self._pool is not None
-        conn = await self._pool.acquire()
+        conn = await self._acquire()
         try:
             cur = await conn.cursor()
             await self._with_timeout(cur.execute(sql, params or ()))
             await conn.commit()
             return cur
         finally:
-            conn.close()
+            self._pool.release(conn)
 
     async def _fetchone(
         self, sql: str, params: tuple | None = None
@@ -327,10 +370,13 @@ class MySQLBackend(StorageBackend):
                 return await cur.fetchone()
 
         assert self._pool is not None
-        async with self._pool.acquire() as conn:
+        conn = await self._acquire()
+        try:
             async with conn.cursor() as cur:
                 await self._with_timeout(cur.execute(sql, params or ()))
                 return await cur.fetchone()
+        finally:
+            self._pool.release(conn)
 
     # ------------------------------------------------------------------
     # Entity management

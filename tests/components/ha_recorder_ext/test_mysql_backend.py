@@ -1,6 +1,7 @@
 """Behavioral tests for MySQLBackend (aiomysql fully mocked)."""
 from __future__ import annotations
 
+import logging
 import sys
 import types
 import uuid
@@ -66,6 +67,10 @@ class _DualMock:
         async def _coro():
             return self._inner
         return _coro().__await__()
+
+    def close(self) -> None:
+        """No-op: mirrors a real coroutine's .close(), used when a patched
+        asyncio.wait_for short-circuits before actually awaiting this."""
 
     async def __aenter__(self):
         return self._inner
@@ -188,13 +193,64 @@ class TestMySQLBackend:
         with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
             await backend.initialize()
 
-            async def _timeout(coro, timeout):  # noqa: ARG001 - matches wait_for's signature
-                coro.close()
-                raise TimeoutError
+            async def _timeout(coro, timeout):
+                # Only fail the query-level wait_for (300s); let the
+                # pool-acquire wait_for (10s) through so the query is
+                # actually the thing that times out, matching the test name.
+                if timeout == _mysql_module._QUERY_TIMEOUT_SECONDS:
+                    coro.close()
+                    raise TimeoutError
+                return await coro
 
             with patch.object(_mysql_module.asyncio, "wait_for", _timeout):
                 with pytest.raises(TimeoutError, match="localhost:3306"):
                     await backend.get_or_create_entity("sensor.x", "sensor", TS)
+
+    async def test_pool_acquire_timeout_raises_clear_error(self) -> None:
+        """A pool exhausted forever (e.g. by a past connection leak) must
+        raise, not hang: this is the failure mode a previous connection-leak
+        bug in _execute() used to produce with no timeout protection at all."""
+        cur, conn, pool, aiomysql_mock = _default_mocks()
+        cur.fetchone = AsyncMock(return_value=(1,))  # schema already current
+
+        backend = _backend()
+        with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
+            await backend.initialize()
+
+            async def _timeout(coro, timeout):
+                if timeout == _mysql_module._CONNECT_TIMEOUT_SECONDS:
+                    coro.close()
+                    raise TimeoutError
+                return await coro
+
+            with patch.object(_mysql_module.asyncio, "wait_for", _timeout):
+                with pytest.raises(
+                    TimeoutError, match="localhost:3306.*pool may be exhausted"
+                ):
+                    await backend.get_or_create_entity("sensor.x", "sensor", TS)
+
+    async def test_execute_releases_connection_back_to_pool(self) -> None:
+        """A non-transactional write must release its connection back to the
+        pool (pool.release), not close it directly — closing it directly
+        leaks it from the pool's accounting forever."""
+        cur, conn, pool, aiomysql_mock = _default_mocks()
+        pk_bytes = uuid7().bytes
+        cur.fetchone = AsyncMock(
+            side_effect=[
+                (1,),  # schema version check during initialize()
+                None,  # entity lookup: not found yet
+                (pk_bytes,),  # re-fetch after INSERT IGNORE
+            ]
+        )
+        pool.release = MagicMock()
+
+        backend = _backend()
+        with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
+            await backend.initialize()
+            await backend.get_or_create_entity("sensor.x", "sensor", TS)
+
+        pool.release.assert_called_with(conn)
+        conn.close.assert_not_called()
 
     async def test_initialize_no_op_when_schema_already_current(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
@@ -244,12 +300,14 @@ class TestMySQLBackend:
         conn.rollback.assert_called_once()
 
     async def test_initialize_index_creation_failure_is_swallowed(self) -> None:
+        """A real "duplicate index name" error (MySQL errno 1061) is expected
+        on reconnect and must not abort initialization."""
         cur, conn, pool, aiomysql_mock = _default_mocks()
         cur.fetchone = AsyncMock(return_value=None)  # fresh schema
 
         def _exec_side_effect(sql: str, params: tuple = ()) -> None:
             if "CREATE INDEX" in sql:
-                raise Exception("duplicate index")
+                raise Exception(1061, "Duplicate key name 'idx_obs_entity_field'")
 
         cur.execute = AsyncMock(side_effect=_exec_side_effect)
 
@@ -258,6 +316,30 @@ class TestMySQLBackend:
             await backend.initialize()  # must not raise despite index errors
 
         conn.commit.assert_called_once()  # still commits after swallowed failures
+
+    async def test_initialize_unexpected_index_error_logs_warning(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A non-"already exists" index failure (e.g. permission denied) must
+        be logged loudly (WARNING), not silently swallowed at DEBUG like the
+        expected "already exists" case — an unrelated failure there shouldn't
+        get misreported as something benign."""
+        cur, conn, pool, aiomysql_mock = _default_mocks()
+        cur.fetchone = AsyncMock(return_value=None)  # fresh schema
+
+        def _exec_side_effect(sql: str, params: tuple = ()) -> None:
+            if "CREATE INDEX" in sql:
+                raise Exception(1142, "INDEX command denied to user")
+
+        cur.execute = AsyncMock(side_effect=_exec_side_effect)
+
+        backend = _backend()
+        with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
+            with caplog.at_level(logging.WARNING, logger="custom_components.ha_recorder_ext.storage.mysql"):
+                await backend.initialize()  # must still not raise
+
+        assert "Index creation failed and was skipped" in caplog.text
+        assert "command denied" in caplog.text
 
     async def test_initialize_runs_registered_migration(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
@@ -677,7 +759,7 @@ class TestMySQLBackend:
         assert backend._in_transaction is False
         assert backend._conn is None
         conn.commit.assert_called_once()
-        conn.close.assert_called_once()
+        pool.release.assert_called_once_with(conn)
 
     async def test_rollback_clears_transaction_state(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
@@ -692,7 +774,7 @@ class TestMySQLBackend:
         assert backend._in_transaction is False
         assert backend._conn is None
         conn.rollback.assert_called_once()
-        conn.close.assert_called_once()
+        pool.release.assert_called_once_with(conn)
 
     async def test_insert_in_transaction_does_not_call_pool_acquire(self) -> None:
         """Inside a transaction, _execute uses the dedicated conn, not pool.acquire()."""
