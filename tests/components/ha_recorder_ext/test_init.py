@@ -333,6 +333,70 @@ class TestImportServices:
                 blocking=True,
             )
 
+    async def test_import_from_recorder_rejects_concurrent_call(
+        self, hass: HomeAssistant, patched_factory
+    ) -> None:
+        """A second import call while one is already running must be rejected.
+
+        Both handlers set the "importing" flag synchronously (no `await`
+        between the check and the flag being set), so the second call, made
+        here before yielding back to the event loop, must see the flag from
+        the first call and be rejected rather than racing it.
+        """
+        entry = _make_entry(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        await hass.services.async_call(
+            DOMAIN, SERVICE_IMPORT_FROM_RECORDER, {}, blocking=True
+        )
+        with pytest.raises(ServiceValidationError):
+            await hass.services.async_call(
+                DOMAIN, SERVICE_IMPORT_FROM_RECORDER, {}, blocking=True
+            )
+        await hass.async_block_till_done()
+
+    async def test_import_from_external_db_rejects_concurrent_call(
+        self, hass: HomeAssistant, patched_factory, tmp_path
+    ) -> None:
+        entry = _make_entry(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        data = {
+            CONF_DB_TYPE: DB_TYPE_SQLITE,
+            CONF_DB_PATH: str(tmp_path / "nonexistent.db"),
+        }
+        await hass.services.async_call(
+            DOMAIN, SERVICE_IMPORT_FROM_EXTERNAL_DB, data, blocking=True
+        )
+        with pytest.raises(ServiceValidationError):
+            await hass.services.async_call(
+                DOMAIN, SERVICE_IMPORT_FROM_EXTERNAL_DB, data, blocking=True
+            )
+        await hass.async_block_till_done()
+
+    async def test_import_from_recorder_allows_new_call_after_completion(
+        self, hass: HomeAssistant, patched_factory
+    ) -> None:
+        entry = _make_entry(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        await hass.services.async_call(
+            DOMAIN, SERVICE_IMPORT_FROM_RECORDER, {}, blocking=True
+        )
+        await hass.async_block_till_done()
+
+        coordinator = entry.runtime_data
+        assert not coordinator.is_importing
+
+        # Must not raise now that the previous import has finished.
+        await hass.services.async_call(
+            DOMAIN, SERVICE_IMPORT_FROM_RECORDER, {}, blocking=True
+        )
+        await hass.async_block_till_done()
+
 
 class TestFlushRollback:
     async def test_flush_rollback_on_commit_failure(

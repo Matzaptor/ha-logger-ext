@@ -101,6 +101,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def _handle_import(call: ServiceCall) -> None:
         from .importer import RecorderImporter
 
+        if coordinator.is_importing:
+            raise ServiceValidationError(
+                "An import is already in progress; wait for it to finish "
+                "(see the Import in progress sensor) before starting another."
+            )
+
         now = datetime.now(timezone.utc)
         raw_start: str | None = call.data.get("start_date")
         raw_end: str | None = call.data.get("end_date")
@@ -119,8 +125,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         importer = RecorderImporter(hass, coordinator.backend)
 
+        # Set synchronously (no `await` between the is_importing check above and
+        # this call) so two rapid, back-to-back service calls can't both pass
+        # the check before either one claims the lock.
+        coordinator.async_set_importing(True)
+
         async def _run() -> None:
-            coordinator.async_set_importing(True)
             try:
                 count = await importer.run(start_time, end_time, entity_ids or None)
                 coordinator.async_set_importing(False, count)
@@ -143,6 +153,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def _handle_import_external(call: ServiceCall) -> None:
         from .external_recorder_reader import create_external_recorder_reader
         from .importer import ExternalRecorderImporter
+
+        if coordinator.is_importing:
+            raise ServiceValidationError(
+                "An import is already in progress; wait for it to finish "
+                "(see the Import in progress sensor) before starting another."
+            )
 
         db_type = call.data[CONF_DB_TYPE]
         if db_type == DB_TYPE_SQLITE and not call.data.get(CONF_DB_PATH):
@@ -178,8 +194,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         reader = create_external_recorder_reader(db_type, dict(call.data))
         importer = ExternalRecorderImporter(hass, coordinator.backend, reader)
 
+        # Set synchronously (no `await` between the is_importing check above and
+        # this call) so two rapid, back-to-back service calls can't both pass
+        # the check before either one claims the lock.
+        coordinator.async_set_importing(True)
+
         async def _run() -> None:
-            coordinator.async_set_importing(True)
             try:
                 await reader.connect()
                 try:
