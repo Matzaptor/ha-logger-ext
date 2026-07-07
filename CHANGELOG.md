@@ -7,6 +7,31 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.1.5] — 2026-07-07
+
+### Fixed
+
+- **Critical: the live recording flush loop and an in-progress import could corrupt
+  each other's database connection.** All three storage backends (`SQLiteBackend`,
+  `MySQLBackend`, `PostgreSQLBackend`) keep the current transaction on shared instance
+  state (`self._conn` / `self._in_transaction`). The periodic flush loop and the import
+  service both hold a reference to the *same* backend instance and run concurrently —
+  if the flush loop had a transaction open via `begin()` at the same moment an import
+  call ran, the import call would see `self._in_transaction == True` and reuse the
+  flush's connection, believing it already owned it. For MySQL this corrupted the wire
+  protocol outright (`RuntimeError: readexactly() called while another coroutine is
+  already waiting for incoming data`), which desynced the connection for everything
+  that followed, cascading into a wave of unrelated `AssertionError`s in
+  `get_or_create_entity` for the live flush's own writes. For SQLite/PostgreSQL the
+  same race is more insidious: a write can silently end up committed or rolled back as
+  a side effect of a transaction it was never part of.
+  All three backends now serialize access with an `asyncio.Lock`, held for the whole
+  `begin()...commit()`/`rollback()` span. Only the task that itself opened the
+  transaction may bypass the lock for its own follow-up calls (avoiding
+  self-deadlock); every other caller waits its turn.
+
+---
+
 ## [2.1.4] — 2026-07-07
 
 ### Fixed
