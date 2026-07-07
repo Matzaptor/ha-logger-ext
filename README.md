@@ -252,6 +252,13 @@ This service reads a backup of **another** Home Assistant instance's Recorder da
 
 Connection parameters are used only for the duration of the call and are not persisted anywhere by ha_recorder_ext. They will, however, appear in Home Assistant's own service-call history and in any automation that calls this service — treat this the same as any other HA service with a password field.
 
+### Concurrency and network resilience
+
+- Only one import (`import_from_recorder` or `import_from_external_db`) can run at a time. Calling either service while one is already in progress (see the *Import in progress* sensor) is rejected with a clear error instead of racing the running import.
+- Within a single day-sized chunk, an additional progress line is logged at INFO level every 25 entities processed, so a day with unusually heavy volume shows visible forward progress instead of appearing stalled between the once-per-day summary lines.
+- Log lines are prefixed with the name of the service actually running (`import_from_recorder` or `import_from_external_db`), so it's always clear which import produced a given line.
+- `import_from_external_db` connections to MySQL/PostgreSQL time out after 10 seconds to connect and 300 seconds per query, so a dead server or a network blip surfaces as a logged error instead of hanging the import task forever.
+
 ## Known limitations
 
 - DuckDB backend is temporarily disabled — it crashes the Python interpreter on shutdown

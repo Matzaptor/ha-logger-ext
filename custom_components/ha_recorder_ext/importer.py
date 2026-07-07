@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, ClassVar
 
 from homeassistant.core import HomeAssistant
 
@@ -15,6 +15,10 @@ from .storage.uuid7 import uuid7
 _LOGGER = logging.getLogger(__name__)
 
 _CHUNK_DAYS = 1
+# Log a progress line every N entities processed within a single chunk, so a
+# calendar day with heavy volume shows visible forward progress instead of
+# going quiet until the whole chunk finishes.
+_ENTITY_PROGRESS_LOG_INTERVAL = 25
 
 
 @dataclass
@@ -67,6 +71,10 @@ class RecorderImporter:
     Idempotent: intervals that already exist in the backend are skipped.
     Resumable: if interrupted, the next run skips time ranges already covered.
     """
+
+    # Overridden by subclasses so log lines identify which service is
+    # actually running instead of always reading "import_from_recorder".
+    _LOG_PREFIX: ClassVar[str] = "import_from_recorder"
 
     def __init__(self, hass: HomeAssistant, backend: StorageBackend) -> None:
         self._hass = hass
@@ -136,7 +144,7 @@ class RecorderImporter:
             from homeassistant.components.recorder import get_instance
             from homeassistant.components.recorder import history as recorder_history
         except ImportError:
-            _LOGGER.error("import_from_recorder: recorder component is not available")
+            _LOGGER.error("%s: recorder component is not available", self._LOG_PREFIX)
             return {}
 
         recorder = get_instance(self._hass)
@@ -161,17 +169,20 @@ class RecorderImporter:
         if entity_ids is None:
             entity_ids = await self._fetch_all_entity_ids()
             if not entity_ids:
-                _LOGGER.info("import_from_recorder: no entities found in recorder, nothing to import")
+                _LOGGER.info(
+                    "%s: no entities found in recorder, nothing to import", self._LOG_PREFIX
+                )
                 return 0
 
         if start_time is None:
             start_time = await self._fetch_earliest_state_time()
             if start_time is None:
-                _LOGGER.info("import_from_recorder: recorder has no states, nothing to import")
+                _LOGGER.info("%s: recorder has no states, nothing to import", self._LOG_PREFIX)
                 return 0
 
         _LOGGER.info(
-            "import_from_recorder: starting — %d entities, window %s → %s",
+            "%s: starting — %d entities, window %s → %s",
+            self._LOG_PREFIX,
             len(entity_ids),
             start_time.date(),
             end_time.date(),
@@ -183,23 +194,62 @@ class RecorderImporter:
         while chunk_start < end_time:
             chunk_end = min(chunk_start + timedelta(days=_CHUNK_DAYS), end_time)
             _LOGGER.debug(
-                "import_from_recorder: chunk %s → %s",
+                "%s: chunk %s → %s — fetching states",
+                self._LOG_PREFIX,
                 chunk_start.date(),
                 chunk_end.date(),
             )
-            states_map = await self._fetch_states(chunk_start, chunk_end, entity_ids)
-            if not states_map:
-                _LOGGER.debug(
-                    "import_from_recorder: chunk %s → %s — no data returned by recorder",
+            try:
+                states_map = await self._fetch_states(chunk_start, chunk_end, entity_ids)
+            except Exception:
+                _LOGGER.exception(
+                    "%s: failed fetching states for chunk %s → %s",
+                    self._LOG_PREFIX,
                     chunk_start.date(),
                     chunk_end.date(),
                 )
-            for entity_id, states in states_map.items():
-                ins, skp = await self._import_entity_states(entity_id, states)
+                raise
+            _LOGGER.debug(
+                "%s: chunk %s → %s — %d entities with data",
+                self._LOG_PREFIX,
+                chunk_start.date(),
+                chunk_end.date(),
+                len(states_map),
+            )
+
+            entity_count = len(states_map)
+            for processed, (entity_id, states) in enumerate(states_map.items(), start=1):
+                try:
+                    ins, skp = await self._import_entity_states(entity_id, states)
+                except Exception:
+                    _LOGGER.exception(
+                        "%s: failed importing entity %s in chunk %s → %s",
+                        self._LOG_PREFIX,
+                        entity_id,
+                        chunk_start.date(),
+                        chunk_end.date(),
+                    )
+                    raise
                 total_inserted += ins
                 total_skipped += skp
+                if (
+                    entity_count > _ENTITY_PROGRESS_LOG_INTERVAL
+                    and processed % _ENTITY_PROGRESS_LOG_INTERVAL == 0
+                ):
+                    _LOGGER.info(
+                        "%s: chunk %s → %s — %d/%d entities, %d inserted, %d skipped so far",
+                        self._LOG_PREFIX,
+                        chunk_start.date(),
+                        chunk_end.date(),
+                        processed,
+                        entity_count,
+                        total_inserted,
+                        total_skipped,
+                    )
+
             _LOGGER.info(
-                "import_from_recorder: progress — through %s, %d inserted, %d skipped so far",
+                "%s: progress — through %s, %d inserted, %d skipped so far",
+                self._LOG_PREFIX,
                 chunk_end.date(),
                 total_inserted,
                 total_skipped,
@@ -207,7 +257,8 @@ class RecorderImporter:
             chunk_start = chunk_end
 
         _LOGGER.info(
-            "import_from_recorder: complete — %d inserted, %d skipped",
+            "%s: complete — %d inserted, %d skipped",
+            self._LOG_PREFIX,
             total_inserted,
             total_skipped,
         )
@@ -229,7 +280,8 @@ class RecorderImporter:
 
         field_values = _collect_field_values(states)
         _LOGGER.debug(
-            "import_from_recorder: processing %s (%d states, %d fields)",
+            "%s: processing %s (%d states, %d fields)",
+            self._LOG_PREFIX,
             entity_id,
             len(states),
             len(field_values),
@@ -265,7 +317,8 @@ class RecorderImporter:
                 inserted += 1
 
         _LOGGER.debug(
-            "import_from_recorder: %s — %d inserted, %d skipped",
+            "%s: %s — %d inserted, %d skipped",
+            self._LOG_PREFIX,
             entity_id,
             inserted,
             skipped,
@@ -281,6 +334,8 @@ class ExternalRecorderImporter(RecorderImporter):
     instead of the local HA recorder. The caller owns the reader's connection
     lifecycle (connect() before running, close() after).
     """
+
+    _LOG_PREFIX: ClassVar[str] = "import_from_external_db"
 
     def __init__(
         self,

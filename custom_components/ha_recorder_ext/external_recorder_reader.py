@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -16,6 +18,16 @@ from .const import (
     CONF_DB_PORT,
     CONF_DB_USERNAME,
 )
+
+_LOGGER = logging.getLogger(__name__)
+
+# A stalled TCP connection to a server DB has no built-in timeout in aiomysql/
+# asyncpg, so a network blip or a dead server can otherwise hang the import
+# task forever with no error and no visible query anywhere. These bound both
+# how long we wait to establish a connection and how long a single query may
+# run before we give up and surface a clear, loggable failure.
+_CONNECT_TIMEOUT_SECONDS = 10
+_QUERY_TIMEOUT_SECONDS = 300
 
 _SCHEMA_ERROR_MESSAGE = (
     "Table 'states_meta' not found. This looks like a pre-2023.4 HA recorder "
@@ -154,6 +166,13 @@ class SQLiteExternalRecorderReader(ExternalRecorderReader):
         params = (start.timestamp(), end.timestamp(), *entity_ids)
         async with self._conn.execute(sql, params) as cur:
             rows = await cur.fetchall()
+        _LOGGER.debug(
+            "SQLite external recorder: fetched %d rows for %s → %s (%d entities requested)",
+            len(rows),
+            start,
+            end,
+            len(entity_ids),
+        )
         return _group_rows([tuple(row) for row in rows])
 
 
@@ -193,44 +212,83 @@ class MySQLExternalRecorderReader(ExternalRecorderReader):
         self._password = password
         self._pool: Any = None
 
+    async def _execute(
+        self, cur: Any, sql: str, params: tuple[Any, ...] | None = None
+    ) -> None:
+        """Run one statement with a hard timeout so a dead connection errors instead of hanging."""
+        coro = cur.execute(sql, params) if params is not None else cur.execute(sql)
+        try:
+            await asyncio.wait_for(coro, timeout=_QUERY_TIMEOUT_SECONDS)
+        except TimeoutError as err:
+            raise TimeoutError(
+                f"MySQL external recorder query at {self._host}:{self._port} "
+                f"did not complete within {_QUERY_TIMEOUT_SECONDS}s"
+            ) from err
+
     async def connect(self) -> None:
         import aiomysql
 
-        self._pool = await aiomysql.create_pool(
-            host=self._host,
-            port=self._port,
-            db=self._database,
-            user=self._username,
-            password=self._password,
-            autocommit=True,
-            charset="utf8mb4",
+        _LOGGER.debug(
+            "Connecting to MySQL external recorder at %s:%s/%s",
+            self._host,
+            self._port,
+            self._database,
         )
+        try:
+            self._pool = await aiomysql.create_pool(
+                host=self._host,
+                port=self._port,
+                db=self._database,
+                user=self._username,
+                password=self._password,
+                autocommit=True,
+                charset="utf8mb4",
+                connect_timeout=_CONNECT_TIMEOUT_SECONDS,
+            )
+        except TimeoutError as err:
+            raise TimeoutError(
+                f"Timed out connecting to MySQL external recorder at "
+                f"{self._host}:{self._port} after {_CONNECT_TIMEOUT_SECONDS}s"
+            ) from err
         async with self._pool.acquire() as conn, conn.cursor() as cur:
-            await cur.execute(_MYSQL_CHECK_SCHEMA)
+            await self._execute(cur, _MYSQL_CHECK_SCHEMA)
             row = await cur.fetchone()
         if row is None:
             self._pool.close()
             await self._pool.wait_closed()
             self._pool = None
             raise ExternalRecorderSchemaError(_SCHEMA_ERROR_MESSAGE)
+        _LOGGER.debug(
+            "Connected to MySQL external recorder at %s:%s/%s",
+            self._host,
+            self._port,
+            self._database,
+        )
 
     async def close(self) -> None:
         if self._pool is not None:
             self._pool.close()
             await self._pool.wait_closed()
             self._pool = None
+            _LOGGER.debug(
+                "Closed connection to MySQL external recorder at %s:%s/%s",
+                self._host,
+                self._port,
+                self._database,
+            )
 
     async def fetch_all_entity_ids(self) -> list[str]:
         assert self._pool is not None
         async with self._pool.acquire() as conn, conn.cursor() as cur:
-            await cur.execute(_MYSQL_SELECT_ENTITY_IDS)
+            await self._execute(cur, _MYSQL_SELECT_ENTITY_IDS)
             rows = await cur.fetchall()
+        _LOGGER.debug("MySQL external recorder: %d distinct entity IDs found", len(rows))
         return [row[0] for row in rows]
 
     async def fetch_earliest_state_time(self) -> datetime | None:
         assert self._pool is not None
         async with self._pool.acquire() as conn, conn.cursor() as cur:
-            await cur.execute(_MYSQL_SELECT_EARLIEST_TS)
+            await self._execute(cur, _MYSQL_SELECT_EARLIEST_TS)
             row = await cur.fetchone()
         if row is None or row[0] is None:
             return None
@@ -245,8 +303,15 @@ class MySQLExternalRecorderReader(ExternalRecorderReader):
         sql = _mysql_select_states_sql(len(entity_ids))
         params = (start.timestamp(), end.timestamp(), *entity_ids)
         async with self._pool.acquire() as conn, conn.cursor() as cur:
-            await cur.execute(sql, params)
+            await self._execute(cur, sql, params)
             rows = await cur.fetchall()
+        _LOGGER.debug(
+            "MySQL external recorder: fetched %d rows for %s → %s (%d entities requested)",
+            len(rows),
+            start,
+            end,
+            len(entity_ids),
+        )
         return _group_rows([tuple(row) for row in rows])
 
 
@@ -284,29 +349,56 @@ class PostgreSQLExternalRecorderReader(ExternalRecorderReader):
     async def connect(self) -> None:
         import asyncpg
 
-        self._pool = await asyncpg.create_pool(
-            host=self._host,
-            port=self._port,
-            database=self._database,
-            user=self._username,
-            password=self._password,
+        _LOGGER.debug(
+            "Connecting to PostgreSQL external recorder at %s:%s/%s",
+            self._host,
+            self._port,
+            self._database,
         )
+        try:
+            self._pool = await asyncpg.create_pool(
+                host=self._host,
+                port=self._port,
+                database=self._database,
+                user=self._username,
+                password=self._password,
+                timeout=_CONNECT_TIMEOUT_SECONDS,
+                command_timeout=_QUERY_TIMEOUT_SECONDS,
+            )
+        except TimeoutError as err:
+            raise TimeoutError(
+                f"Timed out connecting to PostgreSQL external recorder at "
+                f"{self._host}:{self._port} after {_CONNECT_TIMEOUT_SECONDS}s"
+            ) from err
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(_POSTGRESQL_CHECK_SCHEMA)
         if row is None:
             await self._pool.close()
             self._pool = None
             raise ExternalRecorderSchemaError(_SCHEMA_ERROR_MESSAGE)
+        _LOGGER.debug(
+            "Connected to PostgreSQL external recorder at %s:%s/%s",
+            self._host,
+            self._port,
+            self._database,
+        )
 
     async def close(self) -> None:
         if self._pool is not None:
             await self._pool.close()
             self._pool = None
+            _LOGGER.debug(
+                "Closed connection to PostgreSQL external recorder at %s:%s/%s",
+                self._host,
+                self._port,
+                self._database,
+            )
 
     async def fetch_all_entity_ids(self) -> list[str]:
         assert self._pool is not None
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(_POSTGRESQL_SELECT_ENTITY_IDS)
+        _LOGGER.debug("PostgreSQL external recorder: %d distinct entity IDs found", len(rows))
         return [row["entity_id"] for row in rows]
 
     async def fetch_earliest_state_time(self) -> datetime | None:
@@ -327,6 +419,13 @@ class PostgreSQLExternalRecorderReader(ExternalRecorderReader):
             rows = await conn.fetch(
                 _POSTGRESQL_SELECT_STATES, start.timestamp(), end.timestamp(), entity_ids
             )
+        _LOGGER.debug(
+            "PostgreSQL external recorder: fetched %d rows for %s → %s (%d entities requested)",
+            len(rows),
+            start,
+            end,
+            len(entity_ids),
+        )
         tuples = [
             (row["entity_id"], row["state"], row["last_updated_ts"], row["shared_attrs"])
             for row in rows

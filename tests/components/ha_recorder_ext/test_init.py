@@ -333,6 +333,75 @@ class TestImportServices:
                 blocking=True,
             )
 
+    async def test_import_from_recorder_rejects_concurrent_call(
+        self, hass: HomeAssistant, patched_factory
+    ) -> None:
+        """A call while an import is already running must be rejected.
+
+        The real first-call-then-second-call race is exercised at the unit
+        level in __init__.py (the flag is set synchronously, with no `await`
+        between the check and the set). Racing two real service calls here
+        would be nondeterministic: the first import's background task can
+        finish (and reset the flag) before the second call runs, depending on
+        event-loop scheduling. Set the flag directly instead to test the
+        guard itself deterministically.
+        """
+        entry = _make_entry(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = entry.runtime_data
+        coordinator.async_set_importing(True)
+        try:
+            with pytest.raises(ServiceValidationError):
+                await hass.services.async_call(
+                    DOMAIN, SERVICE_IMPORT_FROM_RECORDER, {}, blocking=True
+                )
+        finally:
+            coordinator.async_set_importing(False)
+
+    async def test_import_from_external_db_rejects_concurrent_call(
+        self, hass: HomeAssistant, patched_factory, tmp_path
+    ) -> None:
+        entry = _make_entry(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = entry.runtime_data
+        coordinator.async_set_importing(True)
+        try:
+            data = {
+                CONF_DB_TYPE: DB_TYPE_SQLITE,
+                CONF_DB_PATH: str(tmp_path / "nonexistent.db"),
+            }
+            with pytest.raises(ServiceValidationError):
+                await hass.services.async_call(
+                    DOMAIN, SERVICE_IMPORT_FROM_EXTERNAL_DB, data, blocking=True
+                )
+        finally:
+            coordinator.async_set_importing(False)
+
+    async def test_import_from_recorder_allows_new_call_after_completion(
+        self, hass: HomeAssistant, patched_factory
+    ) -> None:
+        entry = _make_entry(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        await hass.services.async_call(
+            DOMAIN, SERVICE_IMPORT_FROM_RECORDER, {}, blocking=True
+        )
+        await hass.async_block_till_done()
+
+        coordinator = entry.runtime_data
+        assert not coordinator.is_importing
+
+        # Must not raise now that the previous import has finished.
+        await hass.services.async_call(
+            DOMAIN, SERVICE_IMPORT_FROM_RECORDER, {}, blocking=True
+        )
+        await hass.async_block_till_done()
+
 
 class TestFlushRollback:
     async def test_flush_rollback_on_commit_failure(
