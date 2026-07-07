@@ -7,6 +7,30 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.1.2] — 2026-07-07
+
+### Fixed
+
+- **Critical:** the periodic live-recording flush loop (`RecorderCoordinator._flush_loop`)
+  called `_flush()` with no exception handling at all. `_flush()` in turn called
+  `backend.begin()` unguarded. Before 2.1.1's timeout fixes, a dead backend connection
+  during `begin()` would just hang the loop; after 2.1.1, the same dead connection now
+  raises `TimeoutError` — which propagated straight out of `_flush_loop()`'s `while True`
+  and killed the background task outright. Since nothing awaits that task, the only trace
+  was a generic, easy-to-miss asyncio "Task exception was never retrieved" warning — live
+  recording would then silently stop forever until the next Home Assistant restart.
+  `_flush_loop()` now catches any exception from `_flush()` and retries on the next
+  interval; `_flush()` itself now guards `begin()` (re-queueing the pending snapshots for
+  the next cycle on failure, dropping and warning only if the queue is full) and
+  `rollback()` (so a broken connection on the way out of a failed commit can no longer
+  compound into an unhandled exception).
+- `MySQLBackend.close()`, `PostgreSQLBackend.close()`, and both MySQL/PostgreSQL external
+  reader `close()` methods now also time out (10s) instead of potentially hanging forever
+  themselves — a stuck close() could otherwise block Home Assistant shutdown/unload or
+  mask whatever error the caller was already handling in a `finally` block.
+
+---
+
 ## [2.1.1] — 2026-07-07
 
 ### Fixed

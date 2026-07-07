@@ -1,7 +1,7 @@
 {
   "domain": "ha_recorder_ext",
   "name": "HA External Recorder",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "config_flow": true,
   "documentation": "https://github.com/Matzaptor/ha-recorder-ext",
   "issue_tracker": "https://github.com/Matzaptor/ha-recorder-ext/issues",
