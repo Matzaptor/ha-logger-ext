@@ -441,7 +441,18 @@ class RecorderCoordinator:
     async def _flush_loop(self) -> None:
         while True:
             await asyncio.sleep(self._flush_interval)
-            await self._flush()
+            try:
+                await self._flush()
+            except Exception:
+                # Never let a flush failure kill this loop: it runs unattended
+                # in the background, so an uncaught exception here would
+                # silently stop all future flushes (and live recording with
+                # them) until the next HA restart, with nothing beyond a
+                # generic "Task exception was never retrieved" asyncio warning
+                # to explain why.
+                _LOGGER.exception(
+                    "Flush loop iteration failed; will retry on the next interval"
+                )
 
     async def _flush(self) -> None:
         if self._queue.empty():
@@ -454,7 +465,16 @@ class RecorderCoordinator:
             except asyncio.QueueEmpty:
                 break
 
-        await self._backend.begin()
+        try:
+            await self._backend.begin()
+        except Exception:
+            _LOGGER.exception(
+                "Flush begin() failed; re-queueing %d snapshot(s) for the next cycle",
+                len(snapshots),
+            )
+            self._requeue(snapshots)
+            return
+
         failed = 0
         for snap in snapshots:
             try:
@@ -467,13 +487,31 @@ class RecorderCoordinator:
             self._last_flush = datetime.now(timezone.utc)
         except Exception:
             _LOGGER.exception("Flush commit failed, attempting rollback")
-            await self._backend.rollback()
+            try:
+                await self._backend.rollback()
+            except Exception:
+                _LOGGER.exception("Flush rollback also failed")
 
         if failed:
             _LOGGER.warning(
                 "Flush completed with %d failed snapshot(s) out of %d",
                 failed,
                 len(snapshots),
+            )
+
+    def _requeue(self, snapshots: list[_StateSnapshot]) -> None:
+        """Put snapshots back on the queue after a failed flush, dropping any that don't fit."""
+        dropped = 0
+        for snap in snapshots:
+            try:
+                self._queue.put_nowait(snap)
+            except asyncio.QueueFull:
+                dropped += 1
+        if dropped:
+            _LOGGER.warning(
+                "Observation queue full while re-queueing after a failed flush, "
+                "dropped %d snapshot(s)",
+                dropped,
             )
 
     async def _process_snapshot(self, snap: _StateSnapshot) -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -429,3 +430,101 @@ class TestFlushRollback:
 
         backend.rollback.assert_called_once()
         assert coordinator.is_running
+
+    async def test_flush_begin_failure_requeues_snapshots(
+        self, hass: HomeAssistant
+    ) -> None:
+        """When begin() raises (e.g. a timed-out dead connection), the queued
+        snapshots must be put back for the next cycle rather than lost, and
+        the failure must not propagate out of _flush()."""
+        backend = _mock_backend()
+        backend.begin.side_effect = TimeoutError("connection dead")
+
+        entry = _make_entry(hass)
+
+        with patch(
+            "custom_components.ha_recorder_ext.create_backend",
+            return_value=backend,
+        ):
+            assert await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+
+            coordinator = entry.runtime_data
+            from custom_components.ha_recorder_ext import _StateSnapshot
+            coordinator._queue.put_nowait(
+                _StateSnapshot("sensor.t", "1", {}, datetime.now(timezone.utc))
+            )
+            await coordinator._flush()  # must not raise
+
+        backend.begin.assert_called_once()
+        backend.commit.assert_not_called()
+        assert coordinator.queue_size == 1
+
+    async def test_flush_rollback_failure_does_not_raise(
+        self, hass: HomeAssistant
+    ) -> None:
+        """If rollback() also fails after a failed commit(), _flush() must
+        still not propagate — a broken connection on the way out must not
+        crash the flush loop on top of the original commit failure."""
+        backend = _mock_backend()
+        backend.commit.side_effect = OSError("disk full")
+        backend.rollback.side_effect = TimeoutError("connection dead")
+
+        entry = _make_entry(hass)
+
+        with patch(
+            "custom_components.ha_recorder_ext.create_backend",
+            return_value=backend,
+        ):
+            assert await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+
+            coordinator = entry.runtime_data
+            from custom_components.ha_recorder_ext import _StateSnapshot
+            coordinator._queue.put_nowait(
+                _StateSnapshot("sensor.t", "1", {}, datetime.now(timezone.utc))
+            )
+            await coordinator._flush()  # must not raise
+
+        backend.rollback.assert_called_once()
+
+    async def test_flush_loop_survives_exception_in_flush(
+        self, hass: HomeAssistant
+    ) -> None:
+        """An unexpected exception out of _flush() must not kill the
+        background flush loop — otherwise live recording would stop
+        permanently and silently until the next HA restart."""
+        backend = _mock_backend()
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_DB_TYPE: DB_TYPE_SQLITE,
+                CONF_DB_PATH: "test.db",
+                CONF_EXCLUDE_DOMAINS: [],
+                CONF_EXCLUDE_ENTITIES: [],
+                CONF_EXCLUDE_ATTRIBUTES: [],
+            },
+            options={CONF_FLUSH_INTERVAL: 0},
+        )
+        entry.add_to_hass(hass)
+
+        with patch(
+            "custom_components.ha_recorder_ext.create_backend",
+            return_value=backend,
+        ):
+            assert await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+
+            coordinator = entry.runtime_data
+            coordinator._flush = AsyncMock(side_effect=RuntimeError("boom"))
+
+            for _ in range(5):
+                await asyncio.sleep(0)
+
+            assert coordinator._flush_task is not None
+            assert not coordinator._flush_task.done()
+            assert coordinator._flush.call_count >= 2
+
+            # Restore a working _flush so unload's final flush doesn't raise.
+            coordinator._flush = AsyncMock()
+            assert await hass.config_entries.async_unload(entry.entry_id)

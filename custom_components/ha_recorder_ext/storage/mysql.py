@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
+from typing import Any
 
 import aiomysql
 
@@ -12,6 +14,14 @@ from .base import ObservationRecord, StorageBackend
 _LOGGER = logging.getLogger(__name__)
 
 _SCHEMA_VERSION = 1
+
+# Neither connecting nor querying MySQL times out by default in aiomysql, so
+# a dead connection or network blip would otherwise hang every read/write
+# this backend does forever, with no error and no visible query anywhere
+# (same failure mode as the external recorder reader — see
+# external_recorder_reader.py for the read-side fix this mirrors).
+_CONNECT_TIMEOUT_SECONDS = 10
+_QUERY_TIMEOUT_SECONDS = 300
 
 _SQL_CREATE_SCHEMA_VERSION = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -148,15 +158,22 @@ class MySQLBackend(StorageBackend):
     # ------------------------------------------------------------------
 
     async def initialize(self) -> None:
-        self._pool = await aiomysql.create_pool(
-            host=self._host,
-            port=self._port,
-            db=self._database,
-            user=self._username,
-            password=self._password,
-            autocommit=False,
-            charset="utf8mb4",
-        )
+        try:
+            self._pool = await aiomysql.create_pool(
+                host=self._host,
+                port=self._port,
+                db=self._database,
+                user=self._username,
+                password=self._password,
+                autocommit=False,
+                charset="utf8mb4",
+                connect_timeout=_CONNECT_TIMEOUT_SECONDS,
+            )
+        except TimeoutError as err:
+            raise TimeoutError(
+                f"Timed out connecting to MySQL storage backend at "
+                f"{self._host}:{self._port} after {_CONNECT_TIMEOUT_SECONDS}s"
+            ) from err
         await self._apply_migrations()
 
     async def close(self) -> None:
@@ -165,7 +182,20 @@ class MySQLBackend(StorageBackend):
             self._conn = None
         if self._pool is not None:
             self._pool.close()
-            await self._pool.wait_closed()
+            try:
+                await asyncio.wait_for(
+                    self._pool.wait_closed(), timeout=_CONNECT_TIMEOUT_SECONDS
+                )
+            except TimeoutError:
+                # Don't let a stuck close() hang shutdown/cleanup or mask
+                # whatever error the caller may already be handling — the
+                # pool object is discarded either way.
+                _LOGGER.warning(
+                    "Timed out closing MySQL storage backend pool at %s:%s after %ds",
+                    self._host,
+                    self._port,
+                    _CONNECT_TIMEOUT_SECONDS,
+                )
             self._pool = None
 
     # ------------------------------------------------------------------
@@ -232,7 +262,7 @@ class MySQLBackend(StorageBackend):
     async def begin(self) -> None:
         assert self._pool is not None
         self._conn = await self._pool.acquire()
-        await self._conn.begin()
+        await self._with_timeout(self._conn.begin())
         self._in_transaction = True
 
     async def commit(self) -> None:
@@ -258,6 +288,15 @@ class MySQLBackend(StorageBackend):
         assert self._conn is not None, "No active transaction connection."
         return self._conn
 
+    async def _with_timeout(self, coro: Awaitable[Any]) -> None:
+        try:
+            await asyncio.wait_for(coro, timeout=_QUERY_TIMEOUT_SECONDS)
+        except TimeoutError as err:
+            raise TimeoutError(
+                f"MySQL storage backend query at {self._host}:{self._port} "
+                f"did not complete within {_QUERY_TIMEOUT_SECONDS}s"
+            ) from err
+
     async def _execute(
         self, sql: str, params: tuple | None = None
     ) -> aiomysql.cursors.Cursor:
@@ -265,14 +304,14 @@ class MySQLBackend(StorageBackend):
         if self._in_transaction:
             conn = self._active_conn()
             cur = await conn.cursor()
-            await cur.execute(sql, params or ())
+            await self._with_timeout(cur.execute(sql, params or ()))
             return cur
 
         assert self._pool is not None
         conn = await self._pool.acquire()
         try:
             cur = await conn.cursor()
-            await cur.execute(sql, params or ())
+            await self._with_timeout(cur.execute(sql, params or ()))
             await conn.commit()
             return cur
         finally:
@@ -284,13 +323,13 @@ class MySQLBackend(StorageBackend):
         if self._in_transaction:
             conn = self._active_conn()
             async with conn.cursor() as cur:
-                await cur.execute(sql, params or ())
+                await self._with_timeout(cur.execute(sql, params or ()))
                 return await cur.fetchone()
 
         assert self._pool is not None
         async with self._pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute(sql, params or ())
+                await self._with_timeout(cur.execute(sql, params or ()))
                 return await cur.fetchone()
 
     # ------------------------------------------------------------------

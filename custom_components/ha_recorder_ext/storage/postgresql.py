@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
@@ -13,6 +14,14 @@ from .base import ObservationRecord, StorageBackend
 _LOGGER = logging.getLogger(__name__)
 
 _SCHEMA_VERSION = 1
+
+# Neither connecting nor querying PostgreSQL times out by default in asyncpg,
+# so a dead connection or network blip would otherwise hang every read/write
+# this backend does forever, with no error and no visible query anywhere
+# (same failure mode as the external recorder reader — see
+# external_recorder_reader.py for the read-side fix this mirrors).
+_CONNECT_TIMEOUT_SECONDS = 10
+_QUERY_TIMEOUT_SECONDS = 300
 
 _SQL_CREATE_SCHEMA_VERSION = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -136,13 +145,21 @@ class PostgreSQLBackend(StorageBackend):
         self._in_transaction = False
 
     async def initialize(self) -> None:
-        self._pool = await asyncpg.create_pool(
-            host=self._host,
-            port=self._port,
-            database=self._database,
-            user=self._username,
-            password=self._password,
-        )
+        try:
+            self._pool = await asyncpg.create_pool(
+                host=self._host,
+                port=self._port,
+                database=self._database,
+                user=self._username,
+                password=self._password,
+                timeout=_CONNECT_TIMEOUT_SECONDS,
+                command_timeout=_QUERY_TIMEOUT_SECONDS,
+            )
+        except TimeoutError as err:
+            raise TimeoutError(
+                f"Timed out connecting to PostgreSQL storage backend at "
+                f"{self._host}:{self._port} after {_CONNECT_TIMEOUT_SECONDS}s"
+            ) from err
         await self._apply_migrations()
 
     async def close(self) -> None:
@@ -151,7 +168,20 @@ class PostgreSQLBackend(StorageBackend):
             self._conn = None
             self._tx = None
         if self._pool is not None:
-            await self._pool.close()
+            try:
+                await asyncio.wait_for(
+                    self._pool.close(), timeout=_CONNECT_TIMEOUT_SECONDS
+                )
+            except TimeoutError:
+                # Don't let a stuck close() hang shutdown/cleanup or mask
+                # whatever error the caller may already be handling — the
+                # pool object is discarded either way.
+                _LOGGER.warning(
+                    "Timed out closing PostgreSQL storage backend pool at %s:%s after %ds",
+                    self._host,
+                    self._port,
+                    _CONNECT_TIMEOUT_SECONDS,
+                )
             self._pool = None
 
     async def _apply_migrations(self) -> None:

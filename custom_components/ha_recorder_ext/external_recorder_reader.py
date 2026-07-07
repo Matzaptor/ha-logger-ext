@@ -268,7 +268,20 @@ class MySQLExternalRecorderReader(ExternalRecorderReader):
     async def close(self) -> None:
         if self._pool is not None:
             self._pool.close()
-            await self._pool.wait_closed()
+            try:
+                await asyncio.wait_for(
+                    self._pool.wait_closed(), timeout=_CONNECT_TIMEOUT_SECONDS
+                )
+            except TimeoutError:
+                # Don't let a stuck close() hang cleanup or mask whatever
+                # error the caller may already be handling — the pool object
+                # is discarded either way.
+                _LOGGER.warning(
+                    "Timed out closing MySQL external recorder pool at %s:%s after %ds",
+                    self._host,
+                    self._port,
+                    _CONNECT_TIMEOUT_SECONDS,
+                )
             self._pool = None
             _LOGGER.debug(
                 "Closed connection to MySQL external recorder at %s:%s/%s",
@@ -385,7 +398,20 @@ class PostgreSQLExternalRecorderReader(ExternalRecorderReader):
 
     async def close(self) -> None:
         if self._pool is not None:
-            await self._pool.close()
+            try:
+                await asyncio.wait_for(
+                    self._pool.close(), timeout=_CONNECT_TIMEOUT_SECONDS
+                )
+            except TimeoutError:
+                # Don't let a stuck close() hang cleanup or mask whatever
+                # error the caller may already be handling — the pool object
+                # is discarded either way.
+                _LOGGER.warning(
+                    "Timed out closing PostgreSQL external recorder pool at %s:%s after %ds",
+                    self._host,
+                    self._port,
+                    _CONNECT_TIMEOUT_SECONDS,
+                )
             self._pool = None
             _LOGGER.debug(
                 "Closed connection to PostgreSQL external recorder at %s:%s/%s",
