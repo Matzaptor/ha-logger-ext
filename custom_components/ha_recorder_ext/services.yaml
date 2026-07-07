@@ -2,7 +2,7 @@ import_from_recorder:
   name: Import from Recorder
   description: >
     Import historical entity states from the Home Assistant Recorder database
-    into ha_logger_ext. Only time ranges with no existing data are imported,
+    into ha_recorder_ext. Only time ranges with no existing data are imported,
     so the service is safe to run multiple times (idempotent and resumable).
     Progress is logged at INFO level. The import runs in the background.
   fields:

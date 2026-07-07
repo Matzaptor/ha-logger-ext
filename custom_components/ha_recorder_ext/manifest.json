@@ -1,10 +1,10 @@
 {
-  "domain": "ha_logger_ext",
-  "name": "HA Logger Extended",
-  "version": "1.2.0",
+  "domain": "ha_recorder_ext",
+  "name": "HA External Recorder",
+  "version": "2.0.0",
   "config_flow": true,
-  "documentation": "https://github.com/Matzaptor/ha-logger-ext",
-  "issue_tracker": "https://github.com/Matzaptor/ha-logger-ext/issues",
+  "documentation": "https://github.com/Matzaptor/ha-recorder-ext",
+  "issue_tracker": "https://github.com/Matzaptor/ha-recorder-ext/issues",
   "requirements": [
     "aiosqlite>=0.19.0",
     "aiomysql>=0.2.0",

@@ -1,6 +1,6 @@
-# ha-logger-ext
+# ha-recorder-ext
 
-[![Tests](https://github.com/Matzaptor/ha-logger-ext/actions/workflows/tests.yml/badge.svg)](https://github.com/Matzaptor/ha-logger-ext/actions/workflows/tests.yml)
+[![Tests](https://github.com/Matzaptor/ha-recorder-ext/actions/workflows/tests.yml/badge.svg)](https://github.com/Matzaptor/ha-recorder-ext/actions/workflows/tests.yml)
 
 A Home Assistant custom integration that logs entity state and attribute observations into a structured database optimized for Machine Learning datasets, feature engineering, and historical analysis.
 
@@ -12,20 +12,20 @@ Home Assistant's built-in recorder stores raw events. This integration stores **
 
 ### Via HACS (recommended)
 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Matzaptor&repository=ha-logger-ext&category=integration)
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Matzaptor&repository=ha-recorder-ext&category=integration)
 
 1. Click the button above to add this repository to HACS.
-2. Install **HA Logger Extended** from HACS.
+2. Install **HA External Recorder** from HACS.
 3. Restart Home Assistant.
 4. Click the button below to open the setup wizard.
 
-[![Add to My Home Assistant](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start?domain=ha_logger_ext)
+[![Add to My Home Assistant](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start?domain=ha_recorder_ext)
 
 ### Manual
 
-1. Copy `custom_components/ha_logger_ext/` into your Home Assistant `custom_components/` directory.
+1. Copy `custom_components/ha_recorder_ext/` into your Home Assistant `custom_components/` directory.
 2. Restart Home Assistant.
-3. Go to **Settings → Devices & Services → Add Integration** and search for **HA Logger Extended**.
+3. Go to **Settings → Devices & Services → Add Integration** and search for **HA External Recorder**.
 
 ## Configuration
 
@@ -54,7 +54,7 @@ Home Assistant's built-in recorder stores raw events. This integration stores **
 
 | Field | Description | Default |
 |---|---|---|
-| Database file path | Path relative to the HA config directory | `ha_logger_ext/ha_logger_ext.db` |
+| Database file path | Path relative to the HA config directory | `ha_recorder_ext/ha_recorder_ext.db` |
 | Exclude domains | Comma-separated domains to skip (e.g. `automation,sun`) | empty |
 | Exclude entities | Comma-separated entity IDs to skip | empty |
 | Exclude attributes | Comma-separated attribute names to never log | empty |
@@ -65,7 +65,7 @@ Home Assistant's built-in recorder stores raw events. This integration stores **
 |---|---|---|
 | Host | Server hostname or IP | `localhost` |
 | Port | TCP port | `3306` (MySQL) / `5432` (PostgreSQL) |
-| Database name | Schema / database to use | `ha_logger_ext` |
+| Database name | Schema / database to use | `ha_recorder_ext` |
 | Username | Database user | — |
 | Password | Database password | — |
 | Exclude domains | Comma-separated domains to skip | empty |
@@ -82,7 +82,7 @@ Home Assistant's built-in recorder stores raw events. This integration stores **
 | Exclude entities | Override the setup-time entity filter | _(from setup)_ | |
 | Exclude attributes | Override the setup-time attribute filter | _(from setup)_ | |
 
-Options can be changed at any time via **Settings → Devices & Services → HA Logger Extended → Configure**. Changing options reloads the integration automatically. Filter values set here override the values entered at setup time.
+Options can be changed at any time via **Settings → Devices & Services → HA External Recorder → Configure**. Changing options reloads the integration automatically. Filter values set here override the values entered at setup time.
 
 ## Database schema
 
@@ -165,7 +165,7 @@ If the queue fills up before a flush, new observations are dropped and a warning
 
 ## Diagnostics
 
-The integration exposes diagnostics data under **Settings → Devices & Services → HA Logger Extended → Download diagnostics**.
+The integration exposes diagnostics data under **Settings → Devices & Services → HA External Recorder → Download diagnostics**.
 
 | Section | Key | Description |
 |---|---|---|
@@ -186,7 +186,7 @@ The integration exposes diagnostics data under **Settings → Devices & Services
 ```bash
 # Clone the repository
 git clone <repo-url>
-cd ha-logger-ext
+cd ha-recorder-ext
 
 # Create a virtual environment (Python 3.12+)
 python3.12 -m venv .venv
@@ -203,13 +203,13 @@ Tests use `pytest-homeassistant-custom-component` and do not require a running H
 
 ## Importing historical data from the HA Recorder
 
-If you have months or years of history in the built-in HA Recorder, you can backfill ha_logger_ext using the **Import from Recorder** service.
+If you have months or years of history in the built-in HA Recorder, you can backfill ha_recorder_ext using the **Import from Recorder** service.
 
 ### How it works
 
-1. Go to **Developer tools → Services** and call `ha_logger_ext.import_from_recorder`.
-2. The service queries the Recorder for the requested time range, compresses consecutive equal values into validity-range intervals (RLE), and inserts only time ranges that do not already exist in your ha_logger_ext database.
-3. Progress is logged at INFO level (`Logger: ha_logger_ext.importer`).
+1. Go to **Developer tools → Services** and call `ha_recorder_ext.import_from_recorder`.
+2. The service queries the Recorder for the requested time range, compresses consecutive equal values into validity-range intervals (RLE), and inserts only time ranges that do not already exist in your ha_recorder_ext database.
+3. Progress is logged at INFO level (`Logger: ha_recorder_ext.importer`).
 
 ### Parameters
 
@@ -221,7 +221,7 @@ If you have months or years of history in the built-in HA Recorder, you can back
 
 ### Idempotency and resumability
 
-The import is **safe to run multiple times**. Before inserting each interval, it checks whether an overlapping observation already exists in ha_logger_ext. If the import is interrupted (e.g. HA restart), re-running it skips already-imported time ranges and continues from the first gap.
+The import is **safe to run multiple times**. Before inserting each interval, it checks whether an overlapping observation already exists in ha_recorder_ext. If the import is interrupted (e.g. HA restart), re-running it skips already-imported time ranges and continues from the first gap.
 
 ## Importing historical data from an external database (recorder backup)
 
@@ -229,9 +229,9 @@ If you have a backup of a **Home Assistant Recorder database** sitting on a sepa
 
 ### How it works
 
-1. Go to **Developer tools → Services** and call `ha_logger_ext.import_from_external_db`, providing `db_type` (`sqlite`, `mysql`, or `postgresql`) and the matching connection parameters.
-2. The service connects read-only to the external database, queries it for the requested time range, compresses consecutive equal values into validity-range intervals (RLE), and inserts only time ranges that do not already exist in your ha_logger_ext database.
-3. Progress is logged at INFO level (`Logger: ha_logger_ext.importer`).
+1. Go to **Developer tools → Services** and call `ha_recorder_ext.import_from_external_db`, providing `db_type` (`sqlite`, `mysql`, or `postgresql`) and the matching connection parameters.
+2. The service connects read-only to the external database, queries it for the requested time range, compresses consecutive equal values into validity-range intervals (RLE), and inserts only time ranges that do not already exist in your ha_recorder_ext database.
+3. Progress is logged at INFO level (`Logger: ha_recorder_ext.importer`).
 
 This service reads a backup of **another** Home Assistant instance's Recorder database — not this integration's own storage. Only the modern, normalized Recorder schema (HA 2023.4+, with `states_meta` and `state_attributes` tables) is supported; older backups fail explicitly with a clear error instead of importing partial or incorrect data.
 
@@ -250,7 +250,7 @@ This service reads a backup of **another** Home Assistant instance's Recorder da
 | `end_date` | ISO 8601 string | no | Latest date to import, defaults to today |
 | `entity_ids` | list of entity IDs | no | Restrict import to specific entities |
 
-Connection parameters are used only for the duration of the call and are not persisted anywhere by ha_logger_ext. They will, however, appear in Home Assistant's own service-call history and in any automation that calls this service — treat this the same as any other HA service with a password field.
+Connection parameters are used only for the duration of the call and are not persisted anywhere by ha_recorder_ext. They will, however, appear in Home Assistant's own service-call history and in any automation that calls this service — treat this the same as any other HA service with a password field.
 
 ## Known limitations
 
@@ -265,10 +265,10 @@ Connection parameters are used only for the duration of the call and are not per
 
 ## Removal
 
-1. Go to **Settings → Devices & Services → HA Logger Extended**.
+1. Go to **Settings → Devices & Services → HA External Recorder**.
 2. Click the three-dot menu → **Delete**.
 3. Restart Home Assistant.
-4. Optionally delete the database directory from your HA config directory (default: `ha_logger_ext/`).
+4. Optionally delete the database directory from your HA config directory (default: `ha_recorder_ext/`).
 
 ## Contributing
 

@@ -2,9 +2,9 @@
 
 ## Project
 
-Project name: `ha-logger-ext`
+Project name: `ha-recorder-ext`
 
-This repository contains a Home Assistant custom integration intended to provide an extended logging component optimized for Machine Learning datasets.
+This repository contains a Home Assistant custom integration intended to provide an external, alternative recorder optimized for Machine Learning and analytics datasets.
 
 The goal is to collect Home Assistant entity state and attribute observations into a structured database schema designed for analytics, feature engineering, reproducible exports, and model training.
 
@@ -46,7 +46,7 @@ Follow Home Assistant development conventions as closely as possible.
 
 The integration should be designed as a standard Home Assistant integration with:
 
-- `custom_components/ha_logger_ext/`
+- `custom_components/ha_recorder_ext/`
 - `manifest.json`
 - `__init__.py`
 - `const.py`
@@ -55,7 +55,7 @@ The integration should be designed as a standard Home Assistant integration with
 - `services.yaml` if services are introduced
 - `diagnostics.py` if diagnostics are useful
 - `quality_scale.yaml` when appropriate
-- tests under `tests/components/ha_logger_ext/`
+- tests under `tests/components/ha_recorder_ext/`
 
 Prefer UI-based configuration through a config flow instead of YAML-only configuration.
 

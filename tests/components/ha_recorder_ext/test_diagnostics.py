@@ -8,7 +8,7 @@ import pytest
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.ha_logger_ext.const import (
+from custom_components.ha_recorder_ext.const import (
     CONF_DB_PATH,
     CONF_DB_TYPE,
     CONF_EXCLUDE_ATTRIBUTES,
@@ -21,7 +21,7 @@ from custom_components.ha_logger_ext.const import (
     DEFAULT_QUEUE_MAX_SIZE,
     DOMAIN,
 )
-from custom_components.ha_logger_ext.diagnostics import (
+from custom_components.ha_recorder_ext.diagnostics import (
     async_get_config_entry_diagnostics,
 )
 
@@ -33,7 +33,7 @@ def _make_entry(hass: HomeAssistant, options: dict | None = None) -> MockConfigE
         domain=DOMAIN,
         data={
             CONF_DB_TYPE: DB_TYPE_SQLITE,
-            CONF_DB_PATH: "ha_logger_ext/ha_logger_ext.db",
+            CONF_DB_PATH: "ha_recorder_ext/ha_recorder_ext.db",
             CONF_EXCLUDE_DOMAINS: ["sun"],
             CONF_EXCLUDE_ENTITIES: [],
             CONF_EXCLUDE_ATTRIBUTES: ["icon"],
@@ -54,7 +54,7 @@ def _mock_backend() -> AsyncMock:
 async def test_diagnostics_returns_config(hass: HomeAssistant) -> None:
     entry = _make_entry(hass)
     with patch(
-        "custom_components.ha_logger_ext.create_backend",
+        "custom_components.ha_recorder_ext.create_backend",
         return_value=_mock_backend(),
     ):
         assert await hass.config_entries.async_setup(entry.entry_id)
@@ -63,7 +63,7 @@ async def test_diagnostics_returns_config(hass: HomeAssistant) -> None:
     diag = await async_get_config_entry_diagnostics(hass, entry)
 
     assert diag["config"][CONF_DB_TYPE] == DB_TYPE_SQLITE
-    assert diag["config"][CONF_DB_PATH] == "ha_logger_ext/ha_logger_ext.db"
+    assert diag["config"][CONF_DB_PATH] == "ha_recorder_ext/ha_recorder_ext.db"
     assert diag["config"][CONF_EXCLUDE_DOMAINS] == ["sun"]
     assert diag["config"][CONF_EXCLUDE_ATTRIBUTES] == ["icon"]
 
@@ -71,7 +71,7 @@ async def test_diagnostics_returns_config(hass: HomeAssistant) -> None:
 async def test_diagnostics_returns_default_options(hass: HomeAssistant) -> None:
     entry = _make_entry(hass)
     with patch(
-        "custom_components.ha_logger_ext.create_backend",
+        "custom_components.ha_recorder_ext.create_backend",
         return_value=_mock_backend(),
     ):
         assert await hass.config_entries.async_setup(entry.entry_id)
@@ -89,7 +89,7 @@ async def test_diagnostics_returns_saved_options(hass: HomeAssistant) -> None:
         options={CONF_FLUSH_INTERVAL: 60, CONF_QUEUE_MAX_SIZE: 5000},
     )
     with patch(
-        "custom_components.ha_logger_ext.create_backend",
+        "custom_components.ha_recorder_ext.create_backend",
         return_value=_mock_backend(),
     ):
         assert await hass.config_entries.async_setup(entry.entry_id)
@@ -104,7 +104,7 @@ async def test_diagnostics_returns_saved_options(hass: HomeAssistant) -> None:
 async def test_diagnostics_coordinator_running(hass: HomeAssistant) -> None:
     entry = _make_entry(hass)
     with patch(
-        "custom_components.ha_logger_ext.create_backend",
+        "custom_components.ha_recorder_ext.create_backend",
         return_value=_mock_backend(),
     ):
         assert await hass.config_entries.async_setup(entry.entry_id)
@@ -122,7 +122,7 @@ async def test_diagnostics_last_flush_none_before_first_flush(
 ) -> None:
     entry = _make_entry(hass)
     with patch(
-        "custom_components.ha_logger_ext.create_backend",
+        "custom_components.ha_recorder_ext.create_backend",
         return_value=_mock_backend(),
     ):
         assert await hass.config_entries.async_setup(entry.entry_id)
@@ -136,7 +136,7 @@ async def test_diagnostics_last_flush_none_before_first_flush(
 async def test_diagnostics_last_flush_set_after_flush(hass: HomeAssistant) -> None:
     entry = _make_entry(hass)
     with patch(
-        "custom_components.ha_logger_ext.create_backend",
+        "custom_components.ha_recorder_ext.create_backend",
         return_value=_mock_backend(),
     ):
         assert await hass.config_entries.async_setup(entry.entry_id)

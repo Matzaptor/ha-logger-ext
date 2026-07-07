@@ -9,8 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.ha_logger_ext.storage.base import ObservationRecord
-from custom_components.ha_logger_ext.storage.uuid7 import uuid7
+from custom_components.ha_recorder_ext.storage.base import ObservationRecord
+from custom_components.ha_recorder_ext.storage.uuid7 import uuid7
 
 # ---------------------------------------------------------------------------
 # Ensure mysql.py is importable even when aiomysql is not installed.
@@ -26,8 +26,8 @@ _AIOMYSQL_STUB.cursors = _cursors_stub  # type: ignore[attr-defined]
 sys.modules.setdefault("aiomysql", _AIOMYSQL_STUB)
 sys.modules.setdefault("aiomysql.cursors", _cursors_stub)
 
-import custom_components.ha_logger_ext.storage.mysql as _mysql_module  # noqa: E402
-from custom_components.ha_logger_ext.storage.mysql import MySQLBackend  # noqa: E402
+import custom_components.ha_recorder_ext.storage.mysql as _mysql_module  # noqa: E402
+from custom_components.ha_recorder_ext.storage.mysql import MySQLBackend  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Test constants

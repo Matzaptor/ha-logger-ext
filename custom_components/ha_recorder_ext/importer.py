@@ -62,7 +62,7 @@ def _collect_field_values(
 
 
 class RecorderImporter:
-    """Imports historical HA recorder data into the ha_logger_ext backend.
+    """Imports historical HA recorder data into the ha_recorder_ext backend.
 
     Idempotent: intervals that already exist in the backend are skipped.
     Resumable: if interrupted, the next run skips time ranges already covered.
