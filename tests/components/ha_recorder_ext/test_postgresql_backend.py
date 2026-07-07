@@ -1,6 +1,7 @@
 """Behavioral tests for PostgreSQLBackend connection handling (asyncpg mocked)."""
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from custom_components.ha_recorder_ext.storage.postgresql import PostgreSQLBackend
@@ -46,3 +47,45 @@ class TestPostgreSQLBackendTimeouts:
 
         assert create_pool.call_args.kwargs["timeout"] == 10
         assert create_pool.call_args.kwargs["command_timeout"] == 300
+
+
+class TestPostgreSQLBackendConcurrency:
+    async def test_concurrent_call_waits_for_open_transaction(self) -> None:
+        """A concurrent read/write while a transaction is open (e.g. the live
+        flush loop's begin()...commit(), running concurrently with an import
+        using the same backend instance) must wait for commit()/rollback(),
+        not run interleaved with it — asyncpg is not safe for concurrent use
+        of one connection."""
+        conn = MagicMock()
+        conn.execute = AsyncMock()
+        conn.fetchrow = AsyncMock(return_value={"version": 1})
+        tx = MagicMock()
+        tx.start = AsyncMock()
+        tx.commit = AsyncMock()
+        conn.transaction = MagicMock(return_value=tx)
+        pool = MagicMock()
+        pool.acquire = MagicMock(side_effect=lambda: _DualMock(conn))
+        pool.release = AsyncMock()
+
+        create_pool = AsyncMock(return_value=pool)
+        with patch("asyncpg.create_pool", create_pool):
+            backend = _backend()
+            await backend.initialize()
+            await backend.begin()
+
+            order: list[str] = []
+
+            async def _concurrent_fetch() -> None:
+                await backend._fetchrow("SELECT 1")
+                order.append("fetch_done")
+
+            task = asyncio.create_task(_concurrent_fetch())
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            assert not task.done(), "concurrent call must block while the transaction is open"
+
+            order.append("commit")
+            await backend.commit()
+            await task
+
+        assert order == ["commit", "fetch_done"]

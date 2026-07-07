@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import aiosqlite
 
@@ -141,6 +144,23 @@ class SQLiteBackend(StorageBackend):
         self._db_path = db_path
         self._conn: aiosqlite.Connection | None = None
         self._in_transaction = False
+        # The live-recording flush loop and the import service both hold a
+        # reference to this same backend instance and can run concurrently.
+        # aiosqlite serializes actual I/O on its single connection, but
+        # without this lock a flush transaction (begin()...commit()) could
+        # still overlap with an import call's own write in a way that makes
+        # _maybe_commit() skip committing the import's write (because
+        # self._in_transaction was set True by the flush, not by the import
+        # call itself) — the import's row would then only be persisted (or
+        # rolled back) as a side effect of whatever the flush does with its
+        # own transaction, which is not correct for either caller.
+        self._lock = asyncio.Lock()
+        # The task that currently owns the open transaction (if any). Only
+        # that task's own calls may bypass the lock while a transaction is
+        # open — a *different* task must never skip it just because
+        # self._in_transaction happens to be True, or it would incorrectly
+        # piggyback its own write onto that task's transaction.
+        self._transaction_owner: asyncio.Task[Any] | None = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -206,23 +226,52 @@ class SQLiteBackend(StorageBackend):
     # ------------------------------------------------------------------
 
     async def begin(self) -> None:
+        # Held until commit()/rollback() releases it — see _serialize().
+        await self._lock.acquire()
         self._in_transaction = True
+        self._transaction_owner = asyncio.current_task()
 
     async def commit(self) -> None:
         assert self._conn is not None
-        await self._conn.commit()
-        self._in_transaction = False
+        try:
+            await self._conn.commit()
+        finally:
+            self._in_transaction = False
+            self._transaction_owner = None
+            self._lock.release()
 
     async def rollback(self) -> None:
         assert self._conn is not None
-        await self._conn.rollback()
-        self._in_transaction = False
+        try:
+            await self._conn.rollback()
+        finally:
+            self._in_transaction = False
+            self._transaction_owner = None
+            self._lock.release()
 
     async def _maybe_commit(self) -> None:
         """Commit only when not inside an explicit transaction."""
         if not self._in_transaction:
             assert self._conn is not None
             await self._conn.commit()
+
+    @asynccontextmanager
+    async def _serialize(self) -> AsyncIterator[None]:
+        """Hold the backend-wide lock unless the *current task* owns the open transaction.
+
+        The live-recording flush loop and the import service both hold a
+        reference to this same backend instance and can run concurrently.
+        Only the task that itself called begin() may bypass the lock while a
+        transaction is open (its own follow-up calls would otherwise
+        deadlock against the lock it's already holding) — any *other* task
+        must wait, or it would incorrectly piggyback its own write onto that
+        task's transaction.
+        """
+        if self._transaction_owner is asyncio.current_task():
+            yield
+        else:
+            async with self._lock:
+                yield
 
     # ------------------------------------------------------------------
     # Entity management
@@ -231,25 +280,26 @@ class SQLiteBackend(StorageBackend):
     async def get_or_create_entity(
         self, entity_id: str, domain: str, ts: datetime
     ) -> uuid.UUID:
-        assert self._conn is not None
-        ts_str = _fmt(ts)
+        async with self._serialize():
+            assert self._conn is not None
+            ts_str = _fmt(ts)
 
-        async with self._conn.execute(_SQL_SELECT_ENTITY, (entity_id,)) as cur:
-            row = await cur.fetchone()
+            async with self._conn.execute(_SQL_SELECT_ENTITY, (entity_id,)) as cur:
+                row = await cur.fetchone()
 
-        if row is not None:
-            pk = _from_blob(row["id"])
-            await self._conn.execute(_SQL_UPDATE_ENTITY_LAST_SEEN, (ts_str, _to_blob(pk)))
+            if row is not None:
+                pk = _from_blob(row["id"])
+                await self._conn.execute(_SQL_UPDATE_ENTITY_LAST_SEEN, (ts_str, _to_blob(pk)))
+                await self._maybe_commit()
+                return pk
+
+            from .uuid7 import uuid7
+            pk = uuid7()
+            await self._conn.execute(
+                _SQL_INSERT_ENTITY, (_to_blob(pk), entity_id, domain, ts_str, ts_str)
+            )
             await self._maybe_commit()
             return pk
-
-        from .uuid7 import uuid7
-        pk = uuid7()
-        await self._conn.execute(
-            _SQL_INSERT_ENTITY, (_to_blob(pk), entity_id, domain, ts_str, ts_str)
-        )
-        await self._maybe_commit()
-        return pk
 
     # ------------------------------------------------------------------
     # Observations
@@ -258,42 +308,45 @@ class SQLiteBackend(StorageBackend):
     async def get_latest_observation(
         self, entity_pk: uuid.UUID, field_name: str
     ) -> ObservationRecord | None:
-        assert self._conn is not None
-        async with self._conn.execute(
-            _SQL_SELECT_LATEST_OBS, (_to_blob(entity_pk), field_name)
-        ) as cur:
-            row = await cur.fetchone()
-        return _row_to_record(row) if row is not None else None
+        async with self._serialize():
+            assert self._conn is not None
+            async with self._conn.execute(
+                _SQL_SELECT_LATEST_OBS, (_to_blob(entity_pk), field_name)
+            ) as cur:
+                row = await cur.fetchone()
+            return _row_to_record(row) if row is not None else None
 
     async def insert_observation(self, obs: ObservationRecord) -> None:
-        assert self._conn is not None
-        await self._conn.execute(
-            _SQL_INSERT_OBS,
-            (
-                _to_blob(obs.id),
-                _to_blob(obs.entity_pk),
-                obs.field_name,
-                obs.value_type,
-                obs.value_str,
-                obs.value_int,
-                obs.value_float,
-                obs.value_bool,
-                obs.value_datetime,
-                obs.value_date,
-                obs.value_time,
-                obs.value_json,
-                _fmt(obs.first_seen),
-                _fmt(obs.last_seen),
-            ),
-        )
-        await self._maybe_commit()
+        async with self._serialize():
+            assert self._conn is not None
+            await self._conn.execute(
+                _SQL_INSERT_OBS,
+                (
+                    _to_blob(obs.id),
+                    _to_blob(obs.entity_pk),
+                    obs.field_name,
+                    obs.value_type,
+                    obs.value_str,
+                    obs.value_int,
+                    obs.value_float,
+                    obs.value_bool,
+                    obs.value_datetime,
+                    obs.value_date,
+                    obs.value_time,
+                    obs.value_json,
+                    _fmt(obs.first_seen),
+                    _fmt(obs.last_seen),
+                ),
+            )
+            await self._maybe_commit()
 
     async def update_last_seen(self, obs_id: uuid.UUID, ts: datetime) -> None:
-        assert self._conn is not None
-        await self._conn.execute(
-            _SQL_UPDATE_OBS_LAST_SEEN, (_fmt(ts), _to_blob(obs_id))
-        )
-        await self._maybe_commit()
+        async with self._serialize():
+            assert self._conn is not None
+            await self._conn.execute(
+                _SQL_UPDATE_OBS_LAST_SEEN, (_fmt(ts), _to_blob(obs_id))
+            )
+            await self._maybe_commit()
 
     async def has_observations_in_range(
         self,
@@ -302,13 +355,14 @@ class SQLiteBackend(StorageBackend):
         start: datetime,
         end: datetime,
     ) -> bool:
-        assert self._conn is not None
-        async with self._conn.execute(
-            _SQL_HAS_OBS_IN_RANGE,
-            (_to_blob(entity_pk), field_name, _fmt(end), _fmt(start)),
-        ) as cur:
-            row = await cur.fetchone()
-        return row is not None
+        async with self._serialize():
+            assert self._conn is not None
+            async with self._conn.execute(
+                _SQL_HAS_OBS_IN_RANGE,
+                (_to_blob(entity_pk), field_name, _fmt(end), _fmt(start)),
+            ) as cur:
+                row = await cur.fetchone()
+            return row is not None
 
 
 def _row_to_record(row: aiosqlite.Row) -> ObservationRecord:
