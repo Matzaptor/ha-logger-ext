@@ -406,12 +406,26 @@ The default behavior must be local-first and privacy-respecting.
     in `manifest.json` or `requirements-test-optional.txt`. The `duckdb.py` backend module
     and its unit tests remain in the repository (gated by `skipif duckdb not installed`)
     for an easy re-enable once upstream ships a Python 3.14-compatible release.
+31. importer reliability and observability hardening: fixed a logging bug where
+    `ExternalRecorderImporter` log lines were always prefixed `import_from_recorder:`
+    even when running `import_from_external_db` (now uses a per-class `_LOG_PREFIX`);
+    added an INFO-level progress log every 25 entities processed within a single
+    day-sized chunk so heavy-volume days show visible forward progress; failures while
+    fetching a chunk or importing one entity are now logged with full context (chunk
+    range, entity id) before re-raising, so the importer never dies silently; added
+    10s connect / 300s per-query timeouts to the MySQL and PostgreSQL external readers
+    (`aiomysql`/`asyncpg` have no timeout by default, so a dead connection or network
+    blip previously hung the import task forever with no error and no visible query on
+    either database engine); both import services now reject a second concurrent call
+    with a clear `ServiceValidationError` instead of racing, using the existing
+    `coordinator.is_importing` flag (the *Import in progress* sensor) as the lock, set
+    synchronously before the background task is scheduled to close the race window
 
 ### Next
 
-31. data retention policy
-32. export tooling
-33. re-enable DuckDB backend once upstream fixes Python 3.14 shutdown crash
+32. data retention policy
+33. export tooling
+34. re-enable DuckDB backend once upstream fixes Python 3.14 shutdown crash
 
 ### Permanent constraints
 
