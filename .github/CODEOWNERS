@@ -2,7 +2,7 @@
 * @Matzaptor
 
 # Integration source
-custom_components/ha_logger_ext/ @Matzaptor
+custom_components/ha_recorder_ext/ @Matzaptor
 
 # Tests
 tests/ @Matzaptor

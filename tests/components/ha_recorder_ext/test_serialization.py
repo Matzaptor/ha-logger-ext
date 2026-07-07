@@ -4,7 +4,7 @@ from datetime import date, datetime, time, timedelta, timezone
 
 import pytest
 
-from custom_components.ha_logger_ext.storage.serialization import serialize, values_equal
+from custom_components.ha_recorder_ext.storage.serialization import serialize, values_equal
 
 
 class TestSerialize:

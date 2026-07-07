@@ -9,12 +9,12 @@ from unittest.mock import patch
 
 import pytest
 
-from custom_components.ha_logger_ext.const import DB_TYPE_SQLITE, DEFAULT_DB_PATH
-from custom_components.ha_logger_ext.storage.base import ObservationRecord
-from custom_components.ha_logger_ext.storage.factory import create_backend
-from custom_components.ha_logger_ext.storage.serialization import serialize, values_equal
-from custom_components.ha_logger_ext.storage.sqlite import SQLiteBackend, _MIGRATIONS, _SCHEMA_VERSION
-from custom_components.ha_logger_ext.storage.uuid7 import uuid7
+from custom_components.ha_recorder_ext.const import DB_TYPE_SQLITE, DEFAULT_DB_PATH
+from custom_components.ha_recorder_ext.storage.base import ObservationRecord
+from custom_components.ha_recorder_ext.storage.factory import create_backend
+from custom_components.ha_recorder_ext.storage.serialization import serialize, values_equal
+from custom_components.ha_recorder_ext.storage.sqlite import SQLiteBackend, _MIGRATIONS, _SCHEMA_VERSION
+from custom_components.ha_recorder_ext.storage.uuid7 import uuid7
 
 TS = datetime(2026, 5, 6, 10, 0, 0, tzinfo=timezone.utc)
 
@@ -121,7 +121,7 @@ class TestObservations:
 
 
 class TestDeduplicationLogic:
-    """Test the deduplication pattern used by LoggerCoordinator._record_field."""
+    """Test the deduplication pattern used by RecorderCoordinator._record_field."""
 
     async def _record(
         self, backend: SQLiteBackend, entity_pk, field: str, raw_value, ts: datetime
@@ -292,7 +292,7 @@ class TestSchemaMigrations:
         async def _fake_v2(conn: aiosqlite.Connection) -> None:
             called.append(2)
 
-        import custom_components.ha_logger_ext.storage.sqlite as _mod
+        import custom_components.ha_recorder_ext.storage.sqlite as _mod
         original_version = _mod._SCHEMA_VERSION
         original_migrations = dict(_mod._MIGRATIONS)
         try:
@@ -323,7 +323,7 @@ class TestSchemaMigrations:
         await b.initialize()
         await b.close()
 
-        import custom_components.ha_logger_ext.storage.sqlite as _mod
+        import custom_components.ha_recorder_ext.storage.sqlite as _mod
         original_version = _mod._SCHEMA_VERSION
         try:
             _mod._SCHEMA_VERSION = 2  # bump without registering a migration
@@ -344,7 +344,7 @@ class TestBatchTransactions:
 
         await b.begin()
         obs = ObservationRecord(
-            id=__import__("custom_components.ha_logger_ext.storage.uuid7", fromlist=["uuid7"]).uuid7(),
+            id=__import__("custom_components.ha_recorder_ext.storage.uuid7", fromlist=["uuid7"]).uuid7(),
             entity_pk=pk, field_name="state", value_type="float",
             value_float=20.0, first_seen=TS, last_seen=TS,
         )
@@ -363,7 +363,7 @@ class TestBatchTransactions:
         pk = await b.get_or_create_entity("sensor.temp", "sensor", TS)
 
         await b.begin()
-        from custom_components.ha_logger_ext.storage.uuid7 import uuid7
+        from custom_components.ha_recorder_ext.storage.uuid7 import uuid7
         obs = ObservationRecord(
             id=uuid7(), entity_pk=pk, field_name="state",
             value_type="float", value_float=99.0, first_seen=TS, last_seen=TS,
@@ -423,7 +423,7 @@ class TestCreateBackend:
         aiomysql_mock.Connection = object  # type: ignore[attr-defined]
         aiomysql_mock.cursors = types.ModuleType("aiomysql.cursors")  # type: ignore[attr-defined]
         with patch.dict(sys.modules, {"aiomysql": aiomysql_mock}):
-            from custom_components.ha_logger_ext.storage.mysql import MySQLBackend
+            from custom_components.ha_recorder_ext.storage.mysql import MySQLBackend
             backend = create_backend({"db_type": "mysql"}, config_dir=str(tmp_path))
             assert isinstance(backend, MySQLBackend)
 
@@ -436,7 +436,7 @@ class TestCreateBackend:
         transaction_mod.Transaction = object  # type: ignore[attr-defined]
         asyncpg_mock.transaction = transaction_mod  # type: ignore[attr-defined]
         with patch.dict(sys.modules, {"asyncpg": asyncpg_mock, "asyncpg.transaction": transaction_mod}):
-            from custom_components.ha_logger_ext.storage.postgresql import PostgreSQLBackend
+            from custom_components.ha_recorder_ext.storage.postgresql import PostgreSQLBackend
             backend = create_backend({"db_type": "postgresql"}, config_dir=str(tmp_path))
             assert isinstance(backend, PostgreSQLBackend)
 

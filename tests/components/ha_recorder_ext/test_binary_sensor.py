@@ -7,25 +7,25 @@ import pytest
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.ha_logger_ext import LoggerCoordinator
-from custom_components.ha_logger_ext.const import (
+from custom_components.ha_recorder_ext import RecorderCoordinator
+from custom_components.ha_recorder_ext.const import (
     CONF_DB_PATH,
     CONF_DB_TYPE,
     DB_TYPE_SQLITE,
     DOMAIN,
 )
 
-_ENTITY_RECORDING = "binary_sensor.ha_logger_extended_recording"
-_ENTITY_IMPORT = "binary_sensor.ha_logger_extended_import_in_progress"
+_ENTITY_RECORDING = "binary_sensor.ha_external_recorder_recording"
+_ENTITY_IMPORT = "binary_sensor.ha_external_recorder_import_in_progress"
 
 
 def _make_entry(hass: HomeAssistant) -> MockConfigEntry:
     entry = MockConfigEntry(
         domain=DOMAIN,
-        title="HA Logger Extended",
+        title="HA External Recorder",
         data={
             CONF_DB_TYPE: DB_TYPE_SQLITE,
-            CONF_DB_PATH: "ha_logger_ext/ha_logger_ext.db",
+            CONF_DB_PATH: "ha_recorder_ext/ha_recorder_ext.db",
         },
     )
     entry.add_to_hass(hass)
@@ -42,7 +42,7 @@ def _mock_backend() -> AsyncMock:
 
 async def _setup(hass: HomeAssistant, entry: MockConfigEntry) -> None:
     with patch(
-        "custom_components.ha_logger_ext.create_backend",
+        "custom_components.ha_recorder_ext.create_backend",
         return_value=_mock_backend(),
     ):
         assert await hass.config_entries.async_setup(entry.entry_id)
@@ -74,7 +74,7 @@ class TestRecordingActiveSensor:
         entry = _make_entry(hass)
         await _setup(hass, entry)
 
-        coordinator: LoggerCoordinator = entry.runtime_data
+        coordinator: RecorderCoordinator = entry.runtime_data
         # stop() sets _stopped, notifies listeners, and cancels the flush task
         await coordinator.stop()
         await hass.async_block_till_done()
@@ -97,7 +97,7 @@ class TestImportProgressSensor:
         entry = _make_entry(hass)
         await _setup(hass, entry)
 
-        coordinator: LoggerCoordinator = entry.runtime_data
+        coordinator: RecorderCoordinator = entry.runtime_data
         coordinator.async_set_importing(True)
         await hass.async_block_till_done()
 
@@ -107,7 +107,7 @@ class TestImportProgressSensor:
         entry = _make_entry(hass)
         await _setup(hass, entry)
 
-        coordinator: LoggerCoordinator = entry.runtime_data
+        coordinator: RecorderCoordinator = entry.runtime_data
         coordinator.async_set_importing(True)
         coordinator.async_set_importing(False, count=42)
         await hass.async_block_till_done()
@@ -118,7 +118,7 @@ class TestImportProgressSensor:
         entry = _make_entry(hass)
         await _setup(hass, entry)
 
-        coordinator: LoggerCoordinator = entry.runtime_data
+        coordinator: RecorderCoordinator = entry.runtime_data
         coordinator.async_set_importing(False, count=42)
         await hass.async_block_till_done()
 

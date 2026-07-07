@@ -134,7 +134,7 @@ def _server_schema(
     )
 
 
-class HaLoggerExtConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class HaRecorderExtConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     def __init__(self) -> None:
@@ -144,8 +144,8 @@ class HaLoggerExtConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
-    ) -> HaLoggerExtOptionsFlow:
-        return HaLoggerExtOptionsFlow(config_entry)
+    ) -> HaRecorderExtOptionsFlow:
+        return HaRecorderExtOptionsFlow(config_entry)
 
     # ------------------------------------------------------------------
     # Step 1: choose DB type
@@ -183,7 +183,7 @@ class HaLoggerExtConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if error:
                 errors["base"] = error
             else:
-                return self.async_create_entry(title="HA Logger Extended", data=data)
+                return self.async_create_entry(title="HA External Recorder", data=data)
 
         return self.async_show_form(
             step_id="embedded",
@@ -206,7 +206,7 @@ class HaLoggerExtConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if error:
                 errors["base"] = error
             else:
-                return self.async_create_entry(title="HA Logger Extended", data=data)
+                return self.async_create_entry(title="HA External Recorder", data=data)
 
         return self.async_show_form(
             step_id="server",
@@ -264,7 +264,7 @@ class HaLoggerExtConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
 
-class HaLoggerExtOptionsFlow(config_entries.OptionsFlow):
+class HaRecorderExtOptionsFlow(config_entries.OptionsFlow):
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self._config_entry = config_entry
 

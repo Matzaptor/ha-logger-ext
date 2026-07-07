@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import LoggerCoordinator
+from . import RecorderCoordinator
 from .const import DOMAIN
 
 
@@ -17,7 +17,7 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    coordinator: LoggerCoordinator = entry.runtime_data
+    coordinator: RecorderCoordinator = entry.runtime_data
     async_add_entities(
         [
             RecordingActiveSensor(coordinator, entry),
@@ -31,14 +31,14 @@ class _CoordinatorBinarySensor(BinarySensorEntity):
     _attr_should_poll = False
     _unique_id_suffix: ClassVar[str]
 
-    def __init__(self, coordinator: LoggerCoordinator, entry: ConfigEntry) -> None:
+    def __init__(self, coordinator: RecorderCoordinator, entry: ConfigEntry) -> None:
         self._coordinator = coordinator
         self._attr_unique_id = f"{entry.entry_id}_{self._unique_id_suffix}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             name=entry.title,
             manufacturer="Matzaptor",
-            model="HA Logger Extended",
+            model="HA External Recorder",
         )
 
     async def async_added_to_hass(self) -> None:

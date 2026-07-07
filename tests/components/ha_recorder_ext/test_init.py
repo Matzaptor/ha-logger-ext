@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.ha_logger_ext.const import (
+from custom_components.ha_recorder_ext.const import (
     CONF_DB_PATH,
     CONF_DB_TYPE,
     CONF_EXCLUDE_ATTRIBUTES,
@@ -54,7 +54,7 @@ def mock_backend():
 @pytest.fixture
 def patched_factory(mock_backend):
     with patch(
-        "custom_components.ha_logger_ext.create_backend",
+        "custom_components.ha_recorder_ext.create_backend",
         return_value=mock_backend,
     ):
         yield mock_backend
@@ -99,7 +99,7 @@ class TestSetupAndUnload:
 
         entry = _make_entry(hass)
         with patch(
-            "custom_components.ha_logger_ext.create_backend"
+            "custom_components.ha_recorder_ext.create_backend"
         ) as mock_factory:
             mock_backend = AsyncMock()
             mock_backend.initialize.side_effect = OSError("disk full")
@@ -114,7 +114,7 @@ class TestGracefulShutdown:
     async def test_ha_stop_triggers_flush(
         self, hass: HomeAssistant, patched_factory, mock_backend
     ) -> None:
-        from custom_components.ha_logger_ext import _StateSnapshot
+        from custom_components.ha_recorder_ext import _StateSnapshot
 
         entry = _make_entry(hass)
         assert await hass.config_entries.async_setup(entry.entry_id)
@@ -254,7 +254,7 @@ class TestQueueBehavior:
         entry.add_to_hass(hass)
 
         with patch(
-            "custom_components.ha_logger_ext.create_backend",
+            "custom_components.ha_recorder_ext.create_backend",
             return_value=_mock_backend(),
         ):
             assert await hass.config_entries.async_setup(entry.entry_id)
@@ -262,7 +262,7 @@ class TestQueueBehavior:
 
             coordinator = entry.runtime_data
             # Fill the queue completely.
-            from custom_components.ha_logger_ext import _StateSnapshot
+            from custom_components.ha_recorder_ext import _StateSnapshot
             while not coordinator._queue.full():
                 coordinator._queue.put_nowait(
                     _StateSnapshot("sensor.x", "1", {}, datetime.now(timezone.utc))
@@ -345,14 +345,14 @@ class TestFlushRollback:
         entry = _make_entry(hass)
 
         with patch(
-            "custom_components.ha_logger_ext.create_backend",
+            "custom_components.ha_recorder_ext.create_backend",
             return_value=backend,
         ):
             assert await hass.config_entries.async_setup(entry.entry_id)
             await hass.async_block_till_done()
 
             coordinator = entry.runtime_data
-            from custom_components.ha_logger_ext import _StateSnapshot
+            from custom_components.ha_recorder_ext import _StateSnapshot
             coordinator._queue.put_nowait(
                 _StateSnapshot("sensor.t", "1", {}, datetime.now(timezone.utc))
             )

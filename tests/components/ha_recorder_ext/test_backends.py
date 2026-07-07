@@ -9,17 +9,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.ha_logger_ext.storage.base import ObservationRecord
-from custom_components.ha_logger_ext.storage.factory import create_backend
+from custom_components.ha_recorder_ext.storage.base import ObservationRecord
+from custom_components.ha_recorder_ext.storage.factory import create_backend
 
 try:
-    from custom_components.ha_logger_ext.storage.duckdb import DuckDBBackend
+    from custom_components.ha_recorder_ext.storage.duckdb import DuckDBBackend
     _DUCKDB_AVAILABLE = True
 except ImportError:
     _DUCKDB_AVAILABLE = False
     DuckDBBackend = None  # type: ignore[assignment,misc]
-from custom_components.ha_logger_ext.storage.uuid7 import uuid7
-from custom_components.ha_logger_ext.const import (
+from custom_components.ha_recorder_ext.storage.uuid7 import uuid7
+from custom_components.ha_recorder_ext.const import (
     CONF_DB_HOST,
     CONF_DB_NAME,
     CONF_DB_PASSWORD,
@@ -127,7 +127,7 @@ class TestMySQLFactory:
         aiomysql_mock.cursors = types.ModuleType("aiomysql.cursors")  # type: ignore[attr-defined]
 
         with patch.dict(sys.modules, {"aiomysql": aiomysql_mock}):
-            from custom_components.ha_logger_ext.storage.mysql import MySQLBackend
+            from custom_components.ha_recorder_ext.storage.mysql import MySQLBackend
 
             config = {
                 CONF_DB_TYPE: DB_TYPE_MYSQL,
@@ -160,7 +160,7 @@ class TestPostgreSQLFactory:
         asyncpg_mock.transaction = transaction_mod  # type: ignore[attr-defined]
 
         with patch.dict(sys.modules, {"asyncpg": asyncpg_mock, "asyncpg.transaction": transaction_mod}):
-            from custom_components.ha_logger_ext.storage.postgresql import PostgreSQLBackend
+            from custom_components.ha_recorder_ext.storage.postgresql import PostgreSQLBackend
 
             config = {
                 CONF_DB_TYPE: DB_TYPE_POSTGRESQL,

@@ -9,16 +9,16 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from custom_components.ha_logger_ext.external_recorder_reader import (
+from custom_components.ha_recorder_ext.external_recorder_reader import (
     SQLiteExternalRecorderReader,
 )
-from custom_components.ha_logger_ext.importer import (
+from custom_components.ha_recorder_ext.importer import (
     ExternalRecorderImporter,
     RecorderImporter,
     _collect_field_values,
     _rle_compress,
 )
-from custom_components.ha_logger_ext.storage.sqlite import SQLiteBackend
+from custom_components.ha_recorder_ext.storage.sqlite import SQLiteBackend
 
 TS0 = datetime(2022, 1, 1, 0, 0, tzinfo=timezone.utc)
 TS1 = datetime(2022, 1, 1, 1, 0, tzinfo=timezone.utc)
@@ -302,7 +302,7 @@ class TestHasObservationsInRange:
 # Logging tests
 # ---------------------------------------------------------------------------
 
-_IMPORTER_LOGGER = "custom_components.ha_logger_ext.importer"
+_IMPORTER_LOGGER = "custom_components.ha_recorder_ext.importer"
 
 
 class _EmptyChunkImporter(_FakeImporter):

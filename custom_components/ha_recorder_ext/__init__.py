@@ -93,7 +93,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except Exception as err:
         raise ConfigEntryNotReady(f"Failed to initialize storage backend: {err}") from err
 
-    coordinator = LoggerCoordinator(hass, backend, entry.data, entry.options)
+    coordinator = RecorderCoordinator(hass, backend, entry.data, entry.options)
     await coordinator.start()
     entry.runtime_data = coordinator
     entry.async_on_unload(entry.add_update_listener(_async_reload_on_options_change))
@@ -208,7 +208,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    coordinator: LoggerCoordinator = entry.runtime_data
+    coordinator: RecorderCoordinator = entry.runtime_data
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
         await coordinator.stop()
@@ -221,7 +221,7 @@ async def _async_reload_on_options_change(
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-class LoggerCoordinator:
+class RecorderCoordinator:
     def __init__(
         self,
         hass: HomeAssistant,

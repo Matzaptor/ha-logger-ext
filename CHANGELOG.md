@@ -7,6 +7,23 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.0.0] — 2026-07-07
+
+### Changed
+
+- **Breaking:** project renamed from `ha-logger-ext` ("HA Logger Extended") to
+  `ha-recorder-ext` ("HA External Recorder"). The integration's actual role is an
+  external, alternative recorder for Home Assistant — not a "logger" — and `ext`
+  stands for "external", not "extended", since the exported data is not ML-only
+  (Power BI and other analytics consumers are also in scope). The Home Assistant
+  `DOMAIN` changed from `ha_logger_ext` to `ha_recorder_ext`; existing config
+  entries do not migrate automatically. No migration path is provided, since no
+  installations of the previous name existed at the time of this rename.
+- The internal coordinator class `LoggerCoordinator` is renamed to
+  `RecorderCoordinator` for the same reason.
+
+---
+
 ## [1.2.0] — 2026-07-02
 
 ### Added
@@ -165,7 +182,8 @@ A second import service, `import_from_external_db`, brings in history from an ex
 - GitHub Actions CI matrix: Python 3.12, 3.13, 3.14
 - 59 automated tests covering config flow, serialization, storage, deduplication, migrations, lifecycle, filters, and graceful shutdown
 
-[Unreleased]: https://github.com/Matzaptor/ha-logger-ext/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/Matzaptor/ha-recorder-ext/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/Matzaptor/ha-recorder-ext/compare/v1.2.0...v2.0.0
 [1.2.0]: https://github.com/Matzaptor/ha-logger-ext/compare/v1.1.3...v1.2.0
 [1.1.3]: https://github.com/Matzaptor/ha-logger-ext/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/Matzaptor/ha-logger-ext/compare/v1.1.1...v1.1.2

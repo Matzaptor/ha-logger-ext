@@ -1,4 +1,4 @@
-# Contributing to ha-logger-ext
+# Contributing to ha-recorder-ext
 
 Thank you for your interest in contributing. This document describes the conventions and workflow expected from all contributors.
 
@@ -100,8 +100,8 @@ ci: add Python 3.14 to test matrix
 ## Development setup
 
 ```bash
-git clone git@github.com:Matzaptor/ha-logger-ext.git
-cd ha-logger-ext
+git clone git@github.com:Matzaptor/ha-recorder-ext.git
+cd ha-recorder-ext
 
 # Create a virtual environment (Python 3.12+)
 python3.12 -m venv .venv
@@ -160,10 +160,10 @@ If you are unsure whether your contribution fits the project scope, open an issu
 
 ## Reporting issues
 
-Use the [GitHub issue tracker](https://github.com/Matzaptor/ha-logger-ext/issues).
+Use the [GitHub issue tracker](https://github.com/Matzaptor/ha-recorder-ext/issues).
 
 When reporting a bug, include:
 - Home Assistant version
-- Integration version (visible in Settings → Devices & Services → HA Logger Extended)
+- Integration version (visible in Settings → Devices & Services → HA External Recorder)
 - Database backend and version
 - Relevant log output (with sensitive values redacted)

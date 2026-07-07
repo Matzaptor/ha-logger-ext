@@ -21,9 +21,9 @@ from .const import (
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> dict[str, Any]:
-    from . import LoggerCoordinator
+    from . import RecorderCoordinator
 
-    coordinator: LoggerCoordinator = entry.runtime_data
+    coordinator: RecorderCoordinator = entry.runtime_data
     return {
         "config": {
             CONF_DB_TYPE: entry.data.get(CONF_DB_TYPE),

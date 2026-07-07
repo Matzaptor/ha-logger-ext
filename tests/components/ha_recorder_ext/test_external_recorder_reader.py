@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import aiosqlite
 import pytest
 
-from custom_components.ha_logger_ext.const import (
+from custom_components.ha_recorder_ext.const import (
     CONF_DB_HOST,
     CONF_DB_NAME,
     CONF_DB_PASSWORD,
@@ -17,7 +17,7 @@ from custom_components.ha_logger_ext.const import (
     CONF_DB_PORT,
     CONF_DB_USERNAME,
 )
-from custom_components.ha_logger_ext.external_recorder_reader import (
+from custom_components.ha_recorder_ext.external_recorder_reader import (
     ExternalRecorderSchemaError,
     MySQLExternalRecorderReader,
     PostgreSQLExternalRecorderReader,

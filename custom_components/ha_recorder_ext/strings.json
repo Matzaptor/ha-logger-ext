@@ -52,7 +52,7 @@
         }
       },
       "reconfigure": {
-        "title": "Reconfigure HA Logger Extended",
+        "title": "Reconfigure HA External Recorder",
         "description": "Update the database connection and filter settings. The integration will reload automatically.",
         "data": {
           "db_path": "Database file path",
@@ -68,7 +68,7 @@
       }
     },
     "abort": {
-      "single_instance_allowed": "Only one instance of HA Logger Extended is allowed.",
+      "single_instance_allowed": "Only one instance of HA External Recorder is allowed.",
       "reconfigure_successful": "Re-configuration was successful."
     },
     "error": {

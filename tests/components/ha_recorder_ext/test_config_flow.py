@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.ha_logger_ext.const import (
+from custom_components.ha_recorder_ext.const import (
     CONF_DB_HOST,
     CONF_DB_NAME,
     CONF_DB_PASSWORD,
@@ -83,7 +83,7 @@ async def test_sqlite_step_user_routes_to_embedded(hass: HomeAssistant) -> None:
 
 @pytest.mark.skip(
     reason="DuckDB backend temporarily disabled pending Python 3.14 "
-    "compatibility fix; see custom_components/ha_logger_ext/storage/factory.py"
+    "compatibility fix; see custom_components/ha_recorder_ext/storage/factory.py"
 )
 async def test_duckdb_step_user_routes_to_embedded(hass: HomeAssistant) -> None:
     result = await hass.config_entries.flow.async_init(
@@ -134,7 +134,7 @@ async def test_creates_entry_with_sqlite_defaults(hass: HomeAssistant) -> None:
         user_input={CONF_DB_TYPE: DB_TYPE_SQLITE},
     )
     with patch(
-        "custom_components.ha_logger_ext.config_flow._test_backend",
+        "custom_components.ha_recorder_ext.config_flow._test_backend",
         new=AsyncMock(return_value=None),
     ):
         result = await hass.config_entries.flow.async_configure(
@@ -155,7 +155,7 @@ async def test_creates_entry_with_custom_db_path(hass: HomeAssistant) -> None:
         user_input={CONF_DB_TYPE: DB_TYPE_SQLITE},
     )
     with patch(
-        "custom_components.ha_logger_ext.config_flow._test_backend",
+        "custom_components.ha_recorder_ext.config_flow._test_backend",
         new=AsyncMock(return_value=None),
     ):
         result = await hass.config_entries.flow.async_configure(
@@ -175,7 +175,7 @@ async def test_csv_fields_parsed_to_lists(hass: HomeAssistant) -> None:
         user_input={CONF_DB_TYPE: DB_TYPE_SQLITE},
     )
     with patch(
-        "custom_components.ha_logger_ext.config_flow._test_backend",
+        "custom_components.ha_recorder_ext.config_flow._test_backend",
         new=AsyncMock(return_value=None),
     ):
         result = await hass.config_entries.flow.async_configure(
@@ -199,7 +199,7 @@ async def test_csv_fields_parsed_to_lists(hass: HomeAssistant) -> None:
 
 @pytest.mark.skip(
     reason="DuckDB backend temporarily disabled pending Python 3.14 "
-    "compatibility fix; see custom_components/ha_logger_ext/storage/factory.py"
+    "compatibility fix; see custom_components/ha_recorder_ext/storage/factory.py"
 )
 async def test_duckdb_creates_entry_with_default_path(hass: HomeAssistant) -> None:
     result = await hass.config_entries.flow.async_init(
@@ -210,7 +210,7 @@ async def test_duckdb_creates_entry_with_default_path(hass: HomeAssistant) -> No
         user_input={CONF_DB_TYPE: DB_TYPE_DUCKDB},
     )
     with patch(
-        "custom_components.ha_logger_ext.config_flow._test_backend",
+        "custom_components.ha_recorder_ext.config_flow._test_backend",
         new=AsyncMock(return_value=None),
     ):
         result = await hass.config_entries.flow.async_configure(
@@ -235,7 +235,7 @@ async def test_mysql_creates_entry_with_server_params(hass: HomeAssistant) -> No
         user_input={CONF_DB_TYPE: DB_TYPE_MYSQL},
     )
     with patch(
-        "custom_components.ha_logger_ext.config_flow._test_backend",
+        "custom_components.ha_recorder_ext.config_flow._test_backend",
         new=AsyncMock(return_value=None),
     ):
         result = await hass.config_entries.flow.async_configure(
@@ -266,7 +266,7 @@ async def test_server_step_shows_error_on_db_failure(hass: HomeAssistant) -> Non
         user_input={CONF_DB_TYPE: DB_TYPE_MYSQL},
     )
     with patch(
-        "custom_components.ha_logger_ext.config_flow._test_backend",
+        "custom_components.ha_recorder_ext.config_flow._test_backend",
         new=AsyncMock(return_value="cannot_connect"),
     ):
         result = await hass.config_entries.flow.async_configure(
@@ -297,7 +297,7 @@ async def test_postgresql_creates_entry_with_server_params(hass: HomeAssistant) 
         user_input={CONF_DB_TYPE: DB_TYPE_POSTGRESQL},
     )
     with patch(
-        "custom_components.ha_logger_ext.config_flow._test_backend",
+        "custom_components.ha_recorder_ext.config_flow._test_backend",
         new=AsyncMock(return_value=None),
     ):
         result = await hass.config_entries.flow.async_configure(
@@ -332,7 +332,7 @@ async def test_user_step_shows_error_on_db_failure(hass: HomeAssistant) -> None:
         user_input={CONF_DB_TYPE: DB_TYPE_SQLITE},
     )
     with patch(
-        "custom_components.ha_logger_ext.config_flow._test_backend",
+        "custom_components.ha_recorder_ext.config_flow._test_backend",
         new=AsyncMock(return_value="cannot_connect"),
     ):
         result = await hass.config_entries.flow.async_configure(
@@ -353,7 +353,7 @@ async def test_user_step_creates_entry_after_db_success(hass: HomeAssistant) -> 
         user_input={CONF_DB_TYPE: DB_TYPE_SQLITE},
     )
     with patch(
-        "custom_components.ha_logger_ext.config_flow._test_backend",
+        "custom_components.ha_recorder_ext.config_flow._test_backend",
         new=AsyncMock(return_value=None),
     ):
         result = await hass.config_entries.flow.async_configure(
@@ -465,7 +465,7 @@ async def test_options_filter_overrides_data_filter(hass: HomeAssistant) -> None
     )
     entry.add_to_hass(hass)
 
-    with patch("custom_components.ha_logger_ext.create_backend") as mock_factory:
+    with patch("custom_components.ha_recorder_ext.create_backend") as mock_factory:
         backend = AsyncMock()
         backend.get_latest_observation.return_value = None
         backend.get_or_create_entity.return_value = uuid.uuid4()
@@ -561,7 +561,7 @@ async def test_reconfigure_prefills_current_values(hass: HomeAssistant) -> None:
 async def test_reconfigure_embedded_updates_and_reloads(hass: HomeAssistant) -> None:
     entry = _entry_with_options(hass)
 
-    with patch("custom_components.ha_logger_ext.create_backend") as mock_factory:
+    with patch("custom_components.ha_recorder_ext.create_backend") as mock_factory:
         backend = AsyncMock()
         backend.get_latest_observation.return_value = None
         backend.get_or_create_entity.return_value = uuid.uuid4()
@@ -575,7 +575,7 @@ async def test_reconfigure_embedded_updates_and_reloads(hass: HomeAssistant) -> 
             context={"source": _SOURCE_RECONFIGURE, "entry_id": entry.entry_id},
         )
         with patch(
-            "custom_components.ha_logger_ext.config_flow._test_backend",
+            "custom_components.ha_recorder_ext.config_flow._test_backend",
             new=AsyncMock(return_value=None),
         ):
             result = await hass.config_entries.flow.async_configure(

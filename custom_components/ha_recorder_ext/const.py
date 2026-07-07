@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-DOMAIN = "ha_logger_ext"
+DOMAIN = "ha_recorder_ext"
 
 # Database config
 CONF_DB_TYPE = "db_type"
@@ -22,10 +22,10 @@ DB_TYPE_EMBEDDED = (DB_TYPE_SQLITE, DB_TYPE_DUCKDB)
 DB_TYPE_SERVER = (DB_TYPE_MYSQL, DB_TYPE_POSTGRESQL)
 
 DEFAULT_DB_TYPE = DB_TYPE_SQLITE
-DEFAULT_DB_PATH = "ha_logger_ext/ha_logger_ext.db"
-DEFAULT_DUCKDB_PATH = "ha_logger_ext/ha_logger_ext.duckdb"
+DEFAULT_DB_PATH = "ha_recorder_ext/ha_recorder_ext.db"
+DEFAULT_DUCKDB_PATH = "ha_recorder_ext/ha_recorder_ext.duckdb"
 DEFAULT_DB_HOST = "localhost"
-DEFAULT_DB_NAME = "ha_logger_ext"
+DEFAULT_DB_NAME = "ha_recorder_ext"
 DEFAULT_MYSQL_PORT = 3306
 DEFAULT_POSTGRESQL_PORT = 5432
 
