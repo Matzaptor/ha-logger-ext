@@ -7,6 +7,22 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.1.1] — 2026-07-07
+
+### Fixed
+
+- The 2.1.0 network-timeout fix only covered the *read* side of `import_from_external_db`
+  (the external MySQL/PostgreSQL readers). The *write* side — `MySQLBackend` and
+  `PostgreSQLBackend`, this integration's own storage backends, used by every import and
+  by the live recording flush — had the identical gap: no connect timeout, no query
+  timeout. A dead connection or network blip while writing observations (not just while
+  reading from an external source) hung the import (and potentially live recording)
+  forever, with no error and no visible query anywhere. `MySQLBackend` now sets a 10s
+  connect timeout on its pool and wraps every query in a 300s timeout; `PostgreSQLBackend`
+  sets the same via `asyncpg`'s native `timeout`/`command_timeout` pool options.
+
+---
+
 ## [2.1.0] — 2026-07-07
 
 ### Fixed
