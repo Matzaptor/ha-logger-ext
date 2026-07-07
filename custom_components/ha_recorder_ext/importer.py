@@ -14,7 +14,7 @@ from .storage.uuid7 import uuid7
 
 _LOGGER = logging.getLogger(__name__)
 
-_CHUNK_DAYS = 7
+_CHUNK_DAYS = 1
 
 
 @dataclass
@@ -198,6 +198,12 @@ class RecorderImporter:
                 ins, skp = await self._import_entity_states(entity_id, states)
                 total_inserted += ins
                 total_skipped += skp
+            _LOGGER.info(
+                "import_from_recorder: progress — through %s, %d inserted, %d skipped so far",
+                chunk_end.date(),
+                total_inserted,
+                total_skipped,
+            )
             chunk_start = chunk_end
 
         _LOGGER.info(

@@ -209,7 +209,7 @@ If you have months or years of history in the built-in HA Recorder, you can back
 
 1. Go to **Developer tools → Services** and call `ha_recorder_ext.import_from_recorder`.
 2. The service queries the Recorder for the requested time range, compresses consecutive equal values into validity-range intervals (RLE), and inserts only time ranges that do not already exist in your ha_recorder_ext database.
-3. Progress is logged at INFO level (`Logger: ha_recorder_ext.importer`).
+3. Progress is logged at INFO level once per processed day, with cumulative inserted/skipped counts (`Logger: ha_recorder_ext.importer`). For full per-entity detail, enable debug logging for this integration under **Settings → Devices & Services → HA External Recorder → ⋮ → Enable debug logging**.
 
 ### Parameters
 
@@ -231,7 +231,7 @@ If you have a backup of a **Home Assistant Recorder database** sitting on a sepa
 
 1. Go to **Developer tools → Services** and call `ha_recorder_ext.import_from_external_db`, providing `db_type` (`sqlite`, `mysql`, or `postgresql`) and the matching connection parameters.
 2. The service connects read-only to the external database, queries it for the requested time range, compresses consecutive equal values into validity-range intervals (RLE), and inserts only time ranges that do not already exist in your ha_recorder_ext database.
-3. Progress is logged at INFO level (`Logger: ha_recorder_ext.importer`).
+3. Progress is logged at INFO level once per processed day, with cumulative inserted/skipped counts (`Logger: ha_recorder_ext.importer`). For full per-entity detail, enable debug logging for this integration under **Settings → Devices & Services → HA External Recorder → ⋮ → Enable debug logging**.
 
 This service reads a backup of **another** Home Assistant instance's Recorder database — not this integration's own storage. Only the modern, normalized Recorder schema (HA 2023.4+, with `states_meta` and `state_attributes` tables) is supported; older backups fail explicitly with a clear error instead of importing partial or incorrect data.
 

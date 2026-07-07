@@ -21,6 +21,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   installations of the previous name existed at the time of this rename.
 - The internal coordinator class `LoggerCoordinator` is renamed to
   `RecorderCoordinator` for the same reason.
+- `import_from_recorder` / `import_from_external_db`: history import chunk size
+  reduced from 7 days to 1 day. This bounds the worst-case single-query wait when
+  importing from a large external database (the raw SQL path's `ORDER BY` over a
+  joined table is often not covered by the recorder's default indexes, so large
+  chunks could trigger an expensive filesort with no visible progress) and reduces
+  wasted work if a restart interrupts an in-progress import.
+- Added a per-chunk INFO-level progress log line (cumulative inserted/skipped
+  counts) for `import_from_recorder`/`import_from_external_db`, so long-running
+  imports show visible progress without needing debug logging.
 
 ---
 

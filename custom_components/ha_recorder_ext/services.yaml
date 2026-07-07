@@ -4,7 +4,9 @@ import_from_recorder:
     Import historical entity states from the Home Assistant Recorder database
     into ha_recorder_ext. Only time ranges with no existing data are imported,
     so the service is safe to run multiple times (idempotent and resumable).
-    Progress is logged at INFO level. The import runs in the background.
+    Progress is logged at INFO level once per processed day, with cumulative
+    counts; enable debug logging on this integration for full per-entity
+    detail. The import runs in the background.
   fields:
     start_date:
       name: Start date
@@ -44,7 +46,10 @@ import_from_external_db:
     state_attributes, HA 2023.4+) is supported; older backups fail with a
     clear error. Only time ranges with no existing data are imported, so the
     service is safe to run multiple times (idempotent and resumable).
-    Connection parameters are used only for this call and are not stored.
+    Progress is logged at INFO level once per processed day, with cumulative
+    counts; enable debug logging on this integration for full per-entity
+    detail. Connection parameters are used only for this call and are not
+    stored.
   fields:
     db_type:
       name: Database type

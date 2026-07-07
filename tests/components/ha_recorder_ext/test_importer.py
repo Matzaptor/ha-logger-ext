@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -150,6 +150,40 @@ class _FakeImporter(RecorderImporter):
 
     async def _fetch_all_entity_ids(self) -> list[str]:
         return self._all_entity_ids
+
+
+class _RecordingFakeImporter(_FakeImporter):
+    """_FakeImporter variant that records every (start, end) window passed to _fetch_states."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.fetch_windows: list[tuple[datetime, datetime]] = []
+
+    async def _fetch_states(
+        self,
+        start: datetime,
+        end: datetime,
+        entity_ids: list[str],
+    ) -> dict[str, list[Any]]:
+        self.fetch_windows.append((start, end))
+        return await super()._fetch_states(start, end, entity_ids)
+
+
+class TestRecorderImporterChunking:
+    async def test_multi_day_window_splits_into_daily_chunks(
+        self, backend: SQLiteBackend
+    ) -> None:
+        start = TS0
+        end = TS0 + timedelta(days=3)
+        hass = MagicMock()
+        importer = _RecordingFakeImporter(hass, backend, {})
+        await importer.run(start, end, entity_ids=["sensor.temp"])
+
+        assert len(importer.fetch_windows) == 3
+        for window_start, window_end in importer.fetch_windows:
+            assert window_end - window_start == timedelta(days=1)
+        assert importer.fetch_windows[0][0] == start
+        assert importer.fetch_windows[-1][1] == end
 
 
 class TestRecorderImporter:
@@ -340,6 +374,23 @@ class TestImporterLogging:
         assert "complete" in caplog.text
         assert "inserted" in caplog.text
         assert "skipped" in caplog.text
+
+    async def test_info_progress_log_per_chunk(
+        self, backend: SQLiteBackend, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        states = [_state("sensor.temp", "20", TS0)]
+        hass = MagicMock()
+        importer = _FakeImporter(hass, backend, {"sensor.temp": states})
+        start = TS0
+        end = TS0 + timedelta(days=3)
+        with caplog.at_level(logging.INFO, logger=_IMPORTER_LOGGER):
+            await importer.run(start, end)
+        # One progress line per processed day-sized chunk (3 days → 3 lines).
+        assert caplog.text.count("progress —") == 3
+        assert "inserted" in caplog.text
+        assert "skipped" in caplog.text
+        # Per-entity detail must stay DEBUG-only, not leak into the INFO capture.
+        assert "processing sensor.temp" not in caplog.text
 
     async def test_debug_log_processing_entity(
         self, backend: SQLiteBackend, caplog: pytest.LogCaptureFixture
