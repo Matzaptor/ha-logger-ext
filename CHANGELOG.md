@@ -7,6 +7,38 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.1.0] — 2026-07-07
+
+### Fixed
+
+- `import_from_external_db` log lines were always prefixed `import_from_recorder:`,
+  even when that service — not `import_from_recorder` — was the one running. Both
+  importers now log under a prefix that matches the service actually in use.
+
+### Added
+
+- An additional INFO-level progress line is now logged every 25 entities processed
+  within a single day-sized chunk, so a calendar day with unusually heavy volume
+  shows visible forward progress instead of going quiet between the once-per-chunk
+  summary lines.
+- Failures while fetching a chunk's states or importing one entity are now logged
+  with full context (chunk date range, entity ID) before the error propagates, so
+  an import failure is never silent.
+- `import_from_external_db`'s MySQL and PostgreSQL readers now enforce a 10s
+  connect timeout and a 300s per-query timeout. Neither `aiomysql` nor `asyncpg`
+  times out by default, so a dead server or a network blip during a long-running
+  query previously hung the import task forever with no error and no query visible
+  on either database engine. DEBUG-level connect/close/fetch logging (row and
+  entity counts, never credentials) was also added across all three external
+  readers (SQLite, MySQL, PostgreSQL).
+- `import_from_recorder` and `import_from_external_db` now reject a second call
+  while one is already running, with a clear `ServiceValidationError`, instead of
+  letting two imports race against the same backend. The guard reuses the existing
+  `coordinator.is_importing` state (the same flag behind the *Import in progress*
+  sensor) as the lock.
+
+---
+
 ## [2.0.0] — 2026-07-07
 
 ### Changed
