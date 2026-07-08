@@ -7,6 +7,27 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.1.6] — 2026-07-08
+
+### Added
+
+- `import_from_recorder`/`import_from_external_db` now log an INFO-level heartbeat at
+  most once every 30 seconds while working through a single entity's intervals. A
+  high-cardinality entity (e.g. a noisy BLE/GPS tracker whose value changes on nearly
+  every reading, defeating RLE compression) can have hundreds of thousands of
+  intervals, each needing its own sequential read+write round trip against the
+  destination database — that can legitimately take hours, and previously produced
+  nothing in the log between the "processing X" line at the start and the
+  "X — N inserted, M skipped" line at the very end. Confirmed live: a single
+  `device_tracker` entity with 95,281 states in one day-sized chunk ran for 3+ hours
+  with no log output at all, indistinguishable from a genuine hang even though it was
+  actually still working (no timeout ever fired, since each individual query was
+  completing normally — it was simply an enormous number of them, one at a time). The
+  heartbeat is time-based, not count-based, so it stays silent for normally sized
+  entities and never goes fully quiet regardless of how large one entity turns out to be.
+
+---
+
 ## [2.1.5] — 2026-07-07
 
 ### Fixed
