@@ -6,7 +6,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -538,6 +538,37 @@ class TestImporterLogging:
             with pytest.raises(AttributeError):
                 await importer.run(TS0, TS1)
         assert "failed importing entity sensor.bad" in caplog.text
+
+    async def test_interval_heartbeat_log_for_slow_entity(
+        self, backend: SQLiteBackend, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A single entity with enough intervals to take a long time must
+        show periodic INFO-level progress instead of going silent between
+        its "processing" and "inserted/skipped" DEBUG lines — the only two
+        lines a high-cardinality entity would otherwise ever produce, even
+        if working through it takes hours."""
+        states = [
+            _state("sensor.noisy", "0", TS0),
+            _state("sensor.noisy", "1", TS1),
+            _state("sensor.noisy", "2", TS2),
+        ]
+        hass = MagicMock()
+        importer = _FakeImporter(hass, backend, {"sensor.noisy": states})
+
+        # monotonic() is called once before the loop (baseline) and once per
+        # interval (3 intervals here). Simulate 35s elapsed by the 2nd
+        # interval, crossing the 30s heartbeat threshold exactly once.
+        # Patched as the name imported into importer.py (not the global
+        # `time` module), so this doesn't touch asyncio's own clock calls.
+        with patch(
+            "custom_components.ha_recorder_ext.importer.monotonic",
+            side_effect=[0.0, 5.0, 35.0, 36.0],
+        ):
+            with caplog.at_level(logging.INFO, logger=_IMPORTER_LOGGER):
+                await importer.run(TS0, TS3)
+
+        assert "still processing, 2 intervals so far" in caplog.text
+        assert caplog.text.count("still processing") == 1
 
 
 # ---------------------------------------------------------------------------
