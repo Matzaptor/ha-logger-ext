@@ -7,6 +7,18 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.2.0] — 2026-07-08
+
+### Added
+
+- `import_from_recorder` and `import_from_external_db` now accept an `exclude_entities`
+  parameter: a list of entity IDs to skip, applied after `entity_ids` resolves to a
+  list (whichever way it was produced — explicit or fetched from the source). Lets you
+  drop a single noisy, high-volume entity (e.g. a device tracker recording near-continuous
+  changes) from a call without having to enumerate every other entity in `entity_ids`.
+
+---
+
 ## [2.1.6] — 2026-07-08
 
 ### Added
