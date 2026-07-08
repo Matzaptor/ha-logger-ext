@@ -403,6 +403,22 @@ class TestImportServices:
         )
         await hass.async_block_till_done()
 
+    async def test_import_from_recorder_accepts_exclude_entities(
+        self, hass: HomeAssistant, patched_factory
+    ) -> None:
+        entry = _make_entry(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        # Must not raise a schema validation error for a well-formed list.
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_IMPORT_FROM_RECORDER,
+            {"exclude_entities": ["sensor.noisy"]},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
 
 class TestFlushRollback:
     async def test_flush_rollback_on_commit_failure(

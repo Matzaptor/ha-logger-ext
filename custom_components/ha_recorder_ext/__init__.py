@@ -49,6 +49,7 @@ _SERVICE_IMPORT_SCHEMA = vol.Schema(
         vol.Optional("start_date"): cv.string,
         vol.Optional("end_date"): cv.string,
         vol.Optional("entity_ids"): vol.All(cv.ensure_list, [cv.entity_id]),
+        vol.Optional("exclude_entities"): vol.All(cv.ensure_list, [cv.entity_id]),
     }
 )
 
@@ -64,6 +65,7 @@ _SERVICE_IMPORT_EXTERNAL_SCHEMA = vol.Schema(
         vol.Optional("start_date"): cv.string,
         vol.Optional("end_date"): cv.string,
         vol.Optional("entity_ids"): vol.All(cv.ensure_list, [cv.entity_id]),
+        vol.Optional("exclude_entities"): vol.All(cv.ensure_list, [cv.entity_id]),
     }
 )
 
@@ -111,6 +113,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raw_start: str | None = call.data.get("start_date")
         raw_end: str | None = call.data.get("end_date")
         entity_ids: list[str] | None = call.data.get("entity_ids")
+        exclude_entities: list[str] | None = call.data.get("exclude_entities")
 
         start_time: datetime | None = (
             datetime.fromisoformat(raw_start).replace(tzinfo=timezone.utc)
@@ -132,7 +135,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         async def _run() -> None:
             try:
-                count = await importer.run(start_time, end_time, entity_ids or None)
+                count = await importer.run(
+                    start_time, end_time, entity_ids or None, exclude_entities
+                )
                 coordinator.async_set_importing(False, count)
             except Exception:
                 _LOGGER.exception("import_from_recorder task failed")
@@ -179,6 +184,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raw_start: str | None = call.data.get("start_date")
         raw_end: str | None = call.data.get("end_date")
         entity_ids: list[str] | None = call.data.get("entity_ids")
+        exclude_entities: list[str] | None = call.data.get("exclude_entities")
 
         start_time: datetime | None = (
             datetime.fromisoformat(raw_start).replace(tzinfo=timezone.utc)
@@ -203,7 +209,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             try:
                 await reader.connect()
                 try:
-                    count = await importer.run(start_time, end_time, entity_ids or None)
+                    count = await importer.run(
+                        start_time, end_time, entity_ids or None, exclude_entities
+                    )
                     coordinator.async_set_importing(False, count)
                 finally:
                     await reader.close()

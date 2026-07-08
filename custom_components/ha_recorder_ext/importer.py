@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from time import monotonic
 from typing import Any, ClassVar
 
 from homeassistant.core import HomeAssistant
@@ -19,6 +20,17 @@ _CHUNK_DAYS = 1
 # calendar day with heavy volume shows visible forward progress instead of
 # going quiet until the whole chunk finishes.
 _ENTITY_PROGRESS_LOG_INTERVAL = 25
+# Log a heartbeat at most this often while working through one entity's
+# intervals. A single high-cardinality entity (e.g. a noisy BLE/GPS tracker
+# whose value changes on nearly every reading, defeating RLE compression)
+# can have hundreds of thousands of intervals, each needing its own
+# sequential read+write round trip — that can legitimately take hours with
+# nothing else to show for it, since the per-entity log lines only print
+# before the first interval and after the very last one. Time-based (not
+# count-based) so it stays quiet for normal-sized entities but never goes
+# fully silent for a long time regardless of how large one entity turns out
+# to be.
+_INTERVAL_PROGRESS_LOG_SECONDS = 30
 
 
 @dataclass
@@ -176,6 +188,7 @@ class RecorderImporter:
         start_time: datetime | None,
         end_time: datetime,
         entity_ids: list[str] | None = None,
+        exclude_entities: list[str] | None = None,
     ) -> int:
         """Run the import. Returns the total number of intervals inserted."""
         if entity_ids is None:
@@ -183,6 +196,22 @@ class RecorderImporter:
             if not entity_ids:
                 _LOGGER.info(
                     "%s: no entities found in recorder, nothing to import", self._LOG_PREFIX
+                )
+                return 0
+
+        if exclude_entities:
+            excluded = set(exclude_entities)
+            before = len(entity_ids)
+            entity_ids = [e for e in entity_ids if e not in excluded]
+            _LOGGER.info(
+                "%s: excluding %d entities (%d remaining)",
+                self._LOG_PREFIX,
+                before - len(entity_ids),
+                len(entity_ids),
+            )
+            if not entity_ids:
+                _LOGGER.info(
+                    "%s: all entities excluded, nothing to import", self._LOG_PREFIX
                 )
                 return 0
 
@@ -301,9 +330,12 @@ class RecorderImporter:
 
         inserted = 0
         skipped = 0
+        processed = 0
+        last_progress_log = monotonic()
 
         for field_name, values in field_values.items():
             for interval in _rle_compress(values):
+                processed += 1
                 if await self._backend.has_observations_in_range(
                     entity_pk, field_name, interval.first_seen, interval.last_seen
                 ):
@@ -327,6 +359,19 @@ class RecorderImporter:
                 )
                 await self._backend.insert_observation(obs)
                 inserted += 1
+
+                now = monotonic()
+                if now - last_progress_log >= _INTERVAL_PROGRESS_LOG_SECONDS:
+                    _LOGGER.info(
+                        "%s: %s — still processing, %d intervals so far "
+                        "(%d inserted, %d skipped)",
+                        self._LOG_PREFIX,
+                        entity_id,
+                        processed,
+                        inserted,
+                        skipped,
+                    )
+                    last_progress_log = now
 
         _LOGGER.debug(
             "%s: %s — %d inserted, %d skipped",

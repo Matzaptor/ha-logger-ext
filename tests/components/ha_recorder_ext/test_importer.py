@@ -6,7 +6,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -151,6 +151,23 @@ class _FakeImporter(RecorderImporter):
 
     async def _fetch_all_entity_ids(self) -> list[str]:
         return self._all_entity_ids
+
+
+class _EntityIdsCapturingImporter(_FakeImporter):
+    """_FakeImporter variant that records the entity_ids passed to _fetch_states."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.received_entity_ids: list[str] | None = None
+
+    async def _fetch_states(
+        self,
+        start: datetime,
+        end: datetime,
+        entity_ids: list[str],
+    ) -> dict[str, list[Any]]:
+        self.received_entity_ids = entity_ids
+        return await super()._fetch_states(start, end, entity_ids)
 
 
 class _FakeExternalImporter(ExternalRecorderImporter):
@@ -305,6 +322,46 @@ class TestRecorderImporter:
         # entity_ids=None → resolved via _fetch_all_entity_ids → ["sensor.temp"]
         inserted = await importer.run(TS0, TS1, entity_ids=None)
         assert inserted == 1
+
+    async def test_exclude_entities_removes_matching_entities(
+        self, backend: SQLiteBackend
+    ) -> None:
+        states_map = {
+            "sensor.temp": [_state("sensor.temp", "20", TS0)],
+            "sensor.noisy": [_state("sensor.noisy", "1", TS0)],
+        }
+        hass = MagicMock()
+        importer = _EntityIdsCapturingImporter(hass, backend, states_map)
+        await importer.run(TS0, TS1, exclude_entities=["sensor.noisy"])
+        assert importer.received_entity_ids == ["sensor.temp"]
+
+    async def test_exclude_entities_applied_on_top_of_explicit_entity_ids(
+        self, backend: SQLiteBackend
+    ) -> None:
+        states_map = {
+            "sensor.temp": [_state("sensor.temp", "20", TS0)],
+            "sensor.noisy": [_state("sensor.noisy", "1", TS0)],
+        }
+        hass = MagicMock()
+        importer = _EntityIdsCapturingImporter(hass, backend, states_map)
+        await importer.run(
+            TS0,
+            TS1,
+            entity_ids=["sensor.temp", "sensor.noisy"],
+            exclude_entities=["sensor.noisy"],
+        )
+        assert importer.received_entity_ids == ["sensor.temp"]
+
+    async def test_exclude_entities_all_excluded_returns_zero(
+        self, backend: SQLiteBackend
+    ) -> None:
+        states_map = {"sensor.noisy": [_state("sensor.noisy", "1", TS0)]}
+        hass = MagicMock()
+        importer = _EntityIdsCapturingImporter(hass, backend, states_map)
+        inserted = await importer.run(TS0, TS1, exclude_entities=["sensor.noisy"])
+        assert inserted == 0
+        # _fetch_states must never even be called once every entity is excluded.
+        assert importer.received_entity_ids is None
 
     async def test_none_entity_ids_with_empty_recorder_returns_zero(
         self, backend: SQLiteBackend
@@ -538,6 +595,50 @@ class TestImporterLogging:
             with pytest.raises(AttributeError):
                 await importer.run(TS0, TS1)
         assert "failed importing entity sensor.bad" in caplog.text
+
+    async def test_exclude_entities_logs_count(
+        self, backend: SQLiteBackend, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        states_map = {
+            "sensor.temp": [_state("sensor.temp", "20", TS0)],
+            "sensor.noisy": [_state("sensor.noisy", "1", TS0)],
+        }
+        hass = MagicMock()
+        importer = _FakeImporter(hass, backend, states_map)
+        with caplog.at_level(logging.INFO, logger=_IMPORTER_LOGGER):
+            await importer.run(TS0, TS1, exclude_entities=["sensor.noisy"])
+        assert "excluding 1 entities (1 remaining)" in caplog.text
+
+    async def test_interval_heartbeat_log_for_slow_entity(
+        self, backend: SQLiteBackend, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A single entity with enough intervals to take a long time must
+        show periodic INFO-level progress instead of going silent between
+        its "processing" and "inserted/skipped" DEBUG lines — the only two
+        lines a high-cardinality entity would otherwise ever produce, even
+        if working through it takes hours."""
+        states = [
+            _state("sensor.noisy", "0", TS0),
+            _state("sensor.noisy", "1", TS1),
+            _state("sensor.noisy", "2", TS2),
+        ]
+        hass = MagicMock()
+        importer = _FakeImporter(hass, backend, {"sensor.noisy": states})
+
+        # monotonic() is called once before the loop (baseline) and once per
+        # interval (3 intervals here). Simulate 35s elapsed by the 2nd
+        # interval, crossing the 30s heartbeat threshold exactly once.
+        # Patched as the name imported into importer.py (not the global
+        # `time` module), so this doesn't touch asyncio's own clock calls.
+        with patch(
+            "custom_components.ha_recorder_ext.importer.monotonic",
+            side_effect=[0.0, 5.0, 35.0, 36.0],
+        ):
+            with caplog.at_level(logging.INFO, logger=_IMPORTER_LOGGER):
+                await importer.run(TS0, TS3)
+
+        assert "still processing, 2 intervals so far" in caplog.text
+        assert caplog.text.count("still processing") == 1
 
 
 # ---------------------------------------------------------------------------
