@@ -7,6 +7,22 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.2.1] — 2026-07-08
+
+### Fixed
+
+- The per-entity heartbeat log introduced in 2.1.6 only fired after an interval was
+  actually inserted, never after a dedup skip — the skip branch `continue`d before
+  reaching the heartbeat check. This meant an entity whose intervals had *already*
+  been imported (the normal case when idempotently resuming or re-running an import
+  over a previously-covered time range) produced no progress output at all, no matter
+  how long it took, defeating the exact "never go silent" guarantee 2.1.6 was meant to
+  provide. Confirmed live: `sensor.system_monitor_memory_free` ran for 10m45s with
+  `0 inserted, 5247 skipped` and zero log lines in between. The heartbeat check now
+  runs after both the insert and skip branches.
+
+---
+
 ## [2.2.0] — 2026-07-08
 
 ### Added
