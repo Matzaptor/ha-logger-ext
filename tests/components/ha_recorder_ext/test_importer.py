@@ -640,6 +640,40 @@ class TestImporterLogging:
         assert "still processing, 2 intervals so far" in caplog.text
         assert caplog.text.count("still processing") == 1
 
+    async def test_interval_heartbeat_log_for_slow_entity_when_all_skipped(
+        self, backend: SQLiteBackend, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The heartbeat must also fire when every interval is a dedup skip,
+        not just when intervals are being inserted. A resumed/idempotent
+        re-run over an already-imported time range hits the skip branch for
+        every interval — before this test existed, the heartbeat check sat
+        after insert_observation() and the skip branch did `continue` before
+        ever reaching it, so a fully-skipped entity produced no progress log
+        at all no matter how long it took."""
+        states = [
+            _state("sensor.noisy", "0", TS0),
+            _state("sensor.noisy", "1", TS1),
+            _state("sensor.noisy", "2", TS2),
+        ]
+        hass = MagicMock()
+        importer = _FakeImporter(hass, backend, {"sensor.noisy": states})
+
+        # First run inserts all 3 intervals for real, so the second run below
+        # hits has_observations_in_range() = True for every interval.
+        await importer.run(TS0, TS3)
+        caplog.clear()
+
+        with patch(
+            "custom_components.ha_recorder_ext.importer.monotonic",
+            side_effect=[0.0, 5.0, 35.0, 36.0],
+        ):
+            with caplog.at_level(logging.INFO, logger=_IMPORTER_LOGGER):
+                await importer.run(TS0, TS3)
+
+        assert "still processing, 2 intervals so far" in caplog.text
+        assert "0 inserted, 2 skipped" in caplog.text
+        assert caplog.text.count("still processing") == 1
+
 
 # ---------------------------------------------------------------------------
 # Integration tests — ExternalRecorderImporter (real SQLite reader + real backend)

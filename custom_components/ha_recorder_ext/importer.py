@@ -340,25 +340,25 @@ class RecorderImporter:
                     entity_pk, field_name, interval.first_seen, interval.last_seen
                 ):
                     skipped += 1
-                    continue
-                obs = ObservationRecord(
-                    id=uuid7(),
-                    entity_pk=entity_pk,
-                    field_name=field_name,
-                    value_type=interval.serialized["value_type"],
-                    value_str=interval.serialized.get("value_str"),
-                    value_int=interval.serialized.get("value_int"),
-                    value_float=interval.serialized.get("value_float"),
-                    value_bool=interval.serialized.get("value_bool"),
-                    value_datetime=interval.serialized.get("value_datetime"),
-                    value_date=interval.serialized.get("value_date"),
-                    value_time=interval.serialized.get("value_time"),
-                    value_json=interval.serialized.get("value_json"),
-                    first_seen=interval.first_seen,
-                    last_seen=interval.last_seen,
-                )
-                await self._backend.insert_observation(obs)
-                inserted += 1
+                else:
+                    obs = ObservationRecord(
+                        id=uuid7(),
+                        entity_pk=entity_pk,
+                        field_name=field_name,
+                        value_type=interval.serialized["value_type"],
+                        value_str=interval.serialized.get("value_str"),
+                        value_int=interval.serialized.get("value_int"),
+                        value_float=interval.serialized.get("value_float"),
+                        value_bool=interval.serialized.get("value_bool"),
+                        value_datetime=interval.serialized.get("value_datetime"),
+                        value_date=interval.serialized.get("value_date"),
+                        value_time=interval.serialized.get("value_time"),
+                        value_json=interval.serialized.get("value_json"),
+                        first_seen=interval.first_seen,
+                        last_seen=interval.last_seen,
+                    )
+                    await self._backend.insert_observation(obs)
+                    inserted += 1
 
                 now = monotonic()
                 if now - last_progress_log >= _INTERVAL_PROGRESS_LOG_SECONDS:
