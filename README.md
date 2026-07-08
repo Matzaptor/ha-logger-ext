@@ -218,6 +218,7 @@ If you have months or years of history in the built-in HA Recorder, you can back
 | `start_date` | ISO 8601 string | 2 years ago | Earliest date to import |
 | `end_date` | ISO 8601 string | today | Latest date to import |
 | `entity_ids` | list of entity IDs | all entities | Restrict import to specific entities |
+| `exclude_entities` | list of entity IDs | none | Skip these entities, applied after `entity_ids` resolves to a list |
 
 ### Idempotency and resumability
 
@@ -249,6 +250,7 @@ This service reads a backup of **another** Home Assistant instance's Recorder da
 | `start_date` | ISO 8601 string | no | Earliest date to import, defaults to the oldest state in the source |
 | `end_date` | ISO 8601 string | no | Latest date to import, defaults to today |
 | `entity_ids` | list of entity IDs | no | Restrict import to specific entities |
+| `exclude_entities` | list of entity IDs | no | Skip these entities, applied after `entity_ids` resolves to a list |
 
 Connection parameters are used only for the duration of the call and are not persisted anywhere by ha_recorder_ext. They will, however, appear in Home Assistant's own service-call history and in any automation that calls this service — treat this the same as any other HA service with a password field.
 

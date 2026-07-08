@@ -36,6 +36,19 @@ import_from_recorder:
       selector:
         entity:
           multiple: true
+    exclude_entities:
+      name: Exclude entities
+      description: >
+        Entity IDs to skip, applied after entity_ids resolves to a list.
+        Useful to leave out a specific high-volume entity (e.g. a device
+        tracker that updates on nearly every reading) without having to
+        enumerate every other entity in entity_ids.
+      required: false
+      example:
+        - sensor.noisy_tracker
+      selector:
+        entity:
+          multiple: true
 
 import_from_external_db:
   name: Import from External Database
@@ -143,6 +156,19 @@ import_from_external_db:
       example:
         - sensor.temperature
         - sensor.humidity
+      selector:
+        entity:
+          multiple: true
+    exclude_entities:
+      name: Exclude entities
+      description: >
+        Entity IDs to skip, applied after entity_ids resolves to a list.
+        Useful to leave out a specific high-volume entity (e.g. a device
+        tracker that updates on nearly every reading) without having to
+        enumerate every other entity in entity_ids.
+      required: false
+      example:
+        - sensor.noisy_tracker
       selector:
         entity:
           multiple: true

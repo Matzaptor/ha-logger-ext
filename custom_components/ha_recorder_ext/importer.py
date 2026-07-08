@@ -188,6 +188,7 @@ class RecorderImporter:
         start_time: datetime | None,
         end_time: datetime,
         entity_ids: list[str] | None = None,
+        exclude_entities: list[str] | None = None,
     ) -> int:
         """Run the import. Returns the total number of intervals inserted."""
         if entity_ids is None:
@@ -195,6 +196,22 @@ class RecorderImporter:
             if not entity_ids:
                 _LOGGER.info(
                     "%s: no entities found in recorder, nothing to import", self._LOG_PREFIX
+                )
+                return 0
+
+        if exclude_entities:
+            excluded = set(exclude_entities)
+            before = len(entity_ids)
+            entity_ids = [e for e in entity_ids if e not in excluded]
+            _LOGGER.info(
+                "%s: excluding %d entities (%d remaining)",
+                self._LOG_PREFIX,
+                before - len(entity_ids),
+                len(entity_ids),
+            )
+            if not entity_ids:
+                _LOGGER.info(
+                    "%s: all entities excluded, nothing to import", self._LOG_PREFIX
                 )
                 return 0
 
