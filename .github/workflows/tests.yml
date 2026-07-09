@@ -24,7 +24,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - python-version: "3.12"
           - python-version: "3.13"
           - python-version: "3.14"
             experimental: true

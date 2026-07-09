@@ -7,6 +7,31 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.3.1] — 2026-07-09
+
+### Fixed
+
+- **Home Assistant now warns that this integration's update listener should be replaced
+  ("has an update listener and should use it for scheduling a reload"), an error starting in
+  HA 2026.12.** The integration paired a generic `entry.add_update_listener()` callback that
+  just called `hass.config_entries.async_reload()` with two flows that already reload
+  themselves — the options flow (via `async_create_entry`) and the reconfigure step (via
+  `async_update_reload_and_abort()`) — risking a double reload/race on save. The manual
+  listener is removed; the options flow now subclasses `config_entries.OptionsFlowWithReload`,
+  which reloads on its own after saving, and the reconfigure step already reloaded on its own.
+
+### Changed
+
+- **Minimum supported Python bumped from 3.12 to 3.13** (`pyproject.toml`, CI matrix,
+  `CONTRIBUTING.md`/README dev-setup instructions). Home Assistant itself dropped Python 3.12
+  support in core release `2025.2.0`, and `OptionsFlowWithReload` (used by the fix above) only
+  exists in HA releases that already require Python ≥3.13 — no installable Home Assistant
+  release runs on Python 3.12 and has this class, so a `test (3.12)` CI job could never again
+  reflect a real, current Home Assistant install. The CI matrix now runs `3.13` (required) and
+  `3.14` (experimental, unchanged).
+
+---
+
 ## [2.3.0] — 2026-07-09
 
 ### Added

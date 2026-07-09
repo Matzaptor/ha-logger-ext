@@ -100,7 +100,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = RecorderCoordinator(hass, backend, entry.data, entry.options)
     await coordinator.start()
     entry.runtime_data = coordinator
-    entry.async_on_unload(entry.add_update_listener(_async_reload_on_options_change))
 
     async def _handle_import(call: ServiceCall) -> None:
         from .importer import RecorderImporter
@@ -266,12 +265,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unloaded:
         await coordinator.stop()
     return unloaded
-
-
-async def _async_reload_on_options_change(
-    hass: HomeAssistant, entry: ConfigEntry
-) -> None:
-    await hass.config_entries.async_reload(entry.entry_id)
 
 
 class RecorderCoordinator:

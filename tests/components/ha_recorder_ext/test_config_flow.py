@@ -396,11 +396,23 @@ async def test_options_flow_shows_saved_values(hass: HomeAssistant) -> None:
 
 async def test_options_flow_saves_values(hass: HomeAssistant) -> None:
     entry = _entry_with_options(hass)
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        user_input={CONF_FLUSH_INTERVAL: 90, CONF_QUEUE_MAX_SIZE: 2000},
-    )
+
+    with patch("custom_components.ha_recorder_ext.create_backend") as mock_factory:
+        backend = AsyncMock()
+        backend.get_latest_observation.return_value = None
+        backend.get_or_create_entity.return_value = uuid.uuid4()
+        mock_factory.return_value = backend
+
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            user_input={CONF_FLUSH_INTERVAL: 90, CONF_QUEUE_MAX_SIZE: 2000},
+        )
+        await hass.async_block_till_done()
+
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert entry.options[CONF_FLUSH_INTERVAL] == 90
     assert entry.options[CONF_QUEUE_MAX_SIZE] == 2000
@@ -408,17 +420,29 @@ async def test_options_flow_saves_values(hass: HomeAssistant) -> None:
 
 async def test_options_flow_saves_filter_as_list(hass: HomeAssistant) -> None:
     entry = _entry_with_options(hass)
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        user_input={
-            CONF_FLUSH_INTERVAL: DEFAULT_FLUSH_INTERVAL,
-            CONF_QUEUE_MAX_SIZE: DEFAULT_QUEUE_MAX_SIZE,
-            CONF_EXCLUDE_DOMAINS: ["automation", "sun"],
-            CONF_EXCLUDE_ENTITIES: [],
-            CONF_EXCLUDE_ATTRIBUTES: ["icon"],
-        },
-    )
+
+    with patch("custom_components.ha_recorder_ext.create_backend") as mock_factory:
+        backend = AsyncMock()
+        backend.get_latest_observation.return_value = None
+        backend.get_or_create_entity.return_value = uuid.uuid4()
+        mock_factory.return_value = backend
+
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            user_input={
+                CONF_FLUSH_INTERVAL: DEFAULT_FLUSH_INTERVAL,
+                CONF_QUEUE_MAX_SIZE: DEFAULT_QUEUE_MAX_SIZE,
+                CONF_EXCLUDE_DOMAINS: ["automation", "sun"],
+                CONF_EXCLUDE_ENTITIES: [],
+                CONF_EXCLUDE_ATTRIBUTES: ["icon"],
+            },
+        )
+        await hass.async_block_till_done()
+
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert entry.options[CONF_EXCLUDE_DOMAINS] == ["automation", "sun"]
     assert entry.options[CONF_EXCLUDE_ENTITIES] == []
