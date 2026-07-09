@@ -55,9 +55,9 @@ Home Assistant's built-in recorder stores raw events. This integration stores **
 | Field | Description | Default |
 |---|---|---|
 | Database file path | Path relative to the HA config directory | `ha_recorder_ext/ha_recorder_ext.db` |
-| Exclude domains | Comma-separated domains to skip (e.g. `automation,sun`) | empty |
-| Exclude entities | Comma-separated entity IDs to skip | empty |
-| Exclude attributes | Comma-separated attribute names to never log | empty |
+| Exclude domains | List of domains to skip (e.g. `automation`, `sun`) | empty |
+| Exclude entities | List of entity IDs to skip (entity picker) | empty |
+| Exclude attributes | List of attribute names to never log | empty |
 
 **Step 2b — server backends (MySQL / PostgreSQL)**
 
@@ -68,9 +68,9 @@ Home Assistant's built-in recorder stores raw events. This integration stores **
 | Database name | Schema / database to use | `ha_recorder_ext` |
 | Username | Database user | — |
 | Password | Database password | — |
-| Exclude domains | Comma-separated domains to skip | empty |
-| Exclude entities | Comma-separated entity IDs to skip | empty |
-| Exclude attributes | Comma-separated attribute names to never log | empty |
+| Exclude domains | List of domains to skip | empty |
+| Exclude entities | List of entity IDs to skip (entity picker) | empty |
+| Exclude attributes | List of attribute names to never log | empty |
 
 ### Options (adjustable after setup)
 

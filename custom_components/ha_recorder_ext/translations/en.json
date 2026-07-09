@@ -16,9 +16,9 @@
         "description": "Configure the local database file path and optional filters.",
         "data": {
           "db_path": "Database file path (relative to HA config directory)",
-          "exclude_domains": "Exclude domains (comma-separated, e.g. automation,sun)",
-          "exclude_entities": "Exclude entities (comma-separated entity IDs)",
-          "exclude_attributes": "Exclude attributes (comma-separated attribute names)"
+          "exclude_domains": "Exclude domains",
+          "exclude_entities": "Exclude entities",
+          "exclude_attributes": "Exclude attributes"
         },
         "data_description": {
           "db_path": "Path to the database file. Created automatically if it does not exist.",
@@ -36,9 +36,9 @@
           "db_name": "Database name",
           "db_username": "Username",
           "db_password": "Password",
-          "exclude_domains": "Exclude domains (comma-separated, e.g. automation,sun)",
-          "exclude_entities": "Exclude entities (comma-separated entity IDs)",
-          "exclude_attributes": "Exclude attributes (comma-separated attribute names)"
+          "exclude_domains": "Exclude domains",
+          "exclude_entities": "Exclude entities",
+          "exclude_attributes": "Exclude attributes"
         },
         "data_description": {
           "db_host": "Hostname or IP address of the database server.",
@@ -61,9 +61,9 @@
           "db_name": "Database name",
           "db_username": "Username",
           "db_password": "Password",
-          "exclude_domains": "Exclude domains (comma-separated)",
-          "exclude_entities": "Exclude entities (comma-separated)",
-          "exclude_attributes": "Exclude attributes (comma-separated)"
+          "exclude_domains": "Exclude domains",
+          "exclude_entities": "Exclude entities",
+          "exclude_attributes": "Exclude attributes"
         }
       }
     },
@@ -82,9 +82,9 @@
         "data": {
           "flush_interval": "Flush interval (seconds)",
           "queue_max_size": "Queue size limit (observations)",
-          "exclude_domains": "Exclude domains (comma-separated)",
-          "exclude_entities": "Exclude entities (comma-separated)",
-          "exclude_attributes": "Exclude attributes (comma-separated)"
+          "exclude_domains": "Exclude domains",
+          "exclude_entities": "Exclude entities",
+          "exclude_attributes": "Exclude attributes"
         },
         "data_description": {
           "flush_interval": "How often buffered observations are written to the database. Lower values reduce data loss on crash but increase I/O.",

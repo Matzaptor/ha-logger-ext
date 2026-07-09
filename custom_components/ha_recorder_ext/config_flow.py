@@ -6,6 +6,12 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers.selector import (
+    EntitySelector,
+    EntitySelectorConfig,
+    TextSelector,
+    TextSelectorConfig,
+)
 
 from .const import (
     CONF_DB_HOST,
@@ -60,10 +66,6 @@ async def _test_backend(hass: HomeAssistant, data: dict) -> str | None:
     return None
 
 
-def _parse_csv(value: str) -> list[str]:
-    return [x.strip() for x in value.split(",") if x.strip()]
-
-
 def _default_path(db_type: str) -> str:
     return DEFAULT_DUCKDB_PATH if db_type == DB_TYPE_DUCKDB else DEFAULT_DB_PATH
 
@@ -72,9 +74,9 @@ def _build_embedded_data(db_type: str, user_input: dict) -> dict:
     return {
         CONF_DB_TYPE: db_type,
         CONF_DB_PATH: user_input.get(CONF_DB_PATH, _default_path(db_type)),
-        CONF_EXCLUDE_DOMAINS: _parse_csv(user_input.get(CONF_EXCLUDE_DOMAINS, "")),
-        CONF_EXCLUDE_ENTITIES: _parse_csv(user_input.get(CONF_EXCLUDE_ENTITIES, "")),
-        CONF_EXCLUDE_ATTRIBUTES: _parse_csv(user_input.get(CONF_EXCLUDE_ATTRIBUTES, "")),
+        CONF_EXCLUDE_DOMAINS: user_input.get(CONF_EXCLUDE_DOMAINS, []),
+        CONF_EXCLUDE_ENTITIES: user_input.get(CONF_EXCLUDE_ENTITIES, []),
+        CONF_EXCLUDE_ATTRIBUTES: user_input.get(CONF_EXCLUDE_ATTRIBUTES, []),
     }
 
 
@@ -86,24 +88,30 @@ def _build_server_data(db_type: str, user_input: dict) -> dict:
         CONF_DB_NAME: user_input[CONF_DB_NAME],
         CONF_DB_USERNAME: user_input[CONF_DB_USERNAME],
         CONF_DB_PASSWORD: user_input[CONF_DB_PASSWORD],
-        CONF_EXCLUDE_DOMAINS: _parse_csv(user_input.get(CONF_EXCLUDE_DOMAINS, "")),
-        CONF_EXCLUDE_ENTITIES: _parse_csv(user_input.get(CONF_EXCLUDE_ENTITIES, "")),
-        CONF_EXCLUDE_ATTRIBUTES: _parse_csv(user_input.get(CONF_EXCLUDE_ATTRIBUTES, "")),
+        CONF_EXCLUDE_DOMAINS: user_input.get(CONF_EXCLUDE_DOMAINS, []),
+        CONF_EXCLUDE_ENTITIES: user_input.get(CONF_EXCLUDE_ENTITIES, []),
+        CONF_EXCLUDE_ATTRIBUTES: user_input.get(CONF_EXCLUDE_ATTRIBUTES, []),
     }
 
 
 def _embedded_schema(
     db_path: str = DEFAULT_DB_PATH,
-    exclude_domains: str = "",
-    exclude_entities: str = "",
-    exclude_attributes: str = "",
+    exclude_domains: list[str] | None = None,
+    exclude_entities: list[str] | None = None,
+    exclude_attributes: list[str] | None = None,
 ) -> vol.Schema:
     return vol.Schema(
         {
             vol.Optional(CONF_DB_PATH, default=db_path): str,
-            vol.Optional(CONF_EXCLUDE_DOMAINS, default=exclude_domains): str,
-            vol.Optional(CONF_EXCLUDE_ENTITIES, default=exclude_entities): str,
-            vol.Optional(CONF_EXCLUDE_ATTRIBUTES, default=exclude_attributes): str,
+            vol.Optional(
+                CONF_EXCLUDE_DOMAINS, default=exclude_domains or []
+            ): TextSelector(TextSelectorConfig(multiple=True)),
+            vol.Optional(
+                CONF_EXCLUDE_ENTITIES, default=exclude_entities or []
+            ): EntitySelector(EntitySelectorConfig(multiple=True)),
+            vol.Optional(
+                CONF_EXCLUDE_ATTRIBUTES, default=exclude_attributes or []
+            ): TextSelector(TextSelectorConfig(multiple=True)),
         }
     )
 
@@ -115,9 +123,9 @@ def _server_schema(
     db_name: str = DEFAULT_DB_NAME,
     db_username: str = "",
     db_password: str = "",
-    exclude_domains: str = "",
-    exclude_entities: str = "",
-    exclude_attributes: str = "",
+    exclude_domains: list[str] | None = None,
+    exclude_entities: list[str] | None = None,
+    exclude_attributes: list[str] | None = None,
 ) -> vol.Schema:
     port = db_port if db_port is not None else _DEFAULT_PORT.get(db_type, DEFAULT_MYSQL_PORT)
     return vol.Schema(
@@ -127,9 +135,15 @@ def _server_schema(
             vol.Required(CONF_DB_NAME, default=db_name): str,
             vol.Required(CONF_DB_USERNAME, default=db_username): str,
             vol.Required(CONF_DB_PASSWORD, default=db_password): str,
-            vol.Optional(CONF_EXCLUDE_DOMAINS, default=exclude_domains): str,
-            vol.Optional(CONF_EXCLUDE_ENTITIES, default=exclude_entities): str,
-            vol.Optional(CONF_EXCLUDE_ATTRIBUTES, default=exclude_attributes): str,
+            vol.Optional(
+                CONF_EXCLUDE_DOMAINS, default=exclude_domains or []
+            ): TextSelector(TextSelectorConfig(multiple=True)),
+            vol.Optional(
+                CONF_EXCLUDE_ENTITIES, default=exclude_entities or []
+            ): EntitySelector(EntitySelectorConfig(multiple=True)),
+            vol.Optional(
+                CONF_EXCLUDE_ATTRIBUTES, default=exclude_attributes or []
+            ): TextSelector(TextSelectorConfig(multiple=True)),
         }
     )
 
@@ -240,9 +254,9 @@ class HaRecorderExtConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if self._db_type in DB_TYPE_EMBEDDED:
             schema = _embedded_schema(
                 db_path=current.get(CONF_DB_PATH, _default_path(self._db_type)),
-                exclude_domains=", ".join(current.get(CONF_EXCLUDE_DOMAINS, [])),
-                exclude_entities=", ".join(current.get(CONF_EXCLUDE_ENTITIES, [])),
-                exclude_attributes=", ".join(current.get(CONF_EXCLUDE_ATTRIBUTES, [])),
+                exclude_domains=current.get(CONF_EXCLUDE_DOMAINS, []),
+                exclude_entities=current.get(CONF_EXCLUDE_ENTITIES, []),
+                exclude_attributes=current.get(CONF_EXCLUDE_ATTRIBUTES, []),
             )
         else:
             schema = _server_schema(
@@ -252,9 +266,9 @@ class HaRecorderExtConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 db_name=current.get(CONF_DB_NAME, DEFAULT_DB_NAME),
                 db_username=current.get(CONF_DB_USERNAME, ""),
                 db_password=current.get(CONF_DB_PASSWORD, ""),
-                exclude_domains=", ".join(current.get(CONF_EXCLUDE_DOMAINS, [])),
-                exclude_entities=", ".join(current.get(CONF_EXCLUDE_ENTITIES, [])),
-                exclude_attributes=", ".join(current.get(CONF_EXCLUDE_ATTRIBUTES, [])),
+                exclude_domains=current.get(CONF_EXCLUDE_DOMAINS, []),
+                exclude_entities=current.get(CONF_EXCLUDE_ENTITIES, []),
+                exclude_attributes=current.get(CONF_EXCLUDE_ATTRIBUTES, []),
             )
 
         return self.async_show_form(
@@ -275,15 +289,9 @@ class HaRecorderExtOptionsFlow(config_entries.OptionsFlow):
             return self.async_create_entry(data={
                 CONF_FLUSH_INTERVAL: user_input[CONF_FLUSH_INTERVAL],
                 CONF_QUEUE_MAX_SIZE: user_input[CONF_QUEUE_MAX_SIZE],
-                CONF_EXCLUDE_DOMAINS: _parse_csv(
-                    user_input.get(CONF_EXCLUDE_DOMAINS, "")
-                ),
-                CONF_EXCLUDE_ENTITIES: _parse_csv(
-                    user_input.get(CONF_EXCLUDE_ENTITIES, "")
-                ),
-                CONF_EXCLUDE_ATTRIBUTES: _parse_csv(
-                    user_input.get(CONF_EXCLUDE_ATTRIBUTES, "")
-                ),
+                CONF_EXCLUDE_DOMAINS: user_input.get(CONF_EXCLUDE_DOMAINS, []),
+                CONF_EXCLUDE_ENTITIES: user_input.get(CONF_EXCLUDE_ENTITIES, []),
+                CONF_EXCLUDE_ATTRIBUTES: user_input.get(CONF_EXCLUDE_ATTRIBUTES, []),
             })
 
         opts = self._config_entry.options
@@ -306,16 +314,16 @@ class HaRecorderExtOptionsFlow(config_entries.OptionsFlow):
                     ): vol.All(int, vol.Range(min=100, max=100_000)),
                     vol.Optional(
                         CONF_EXCLUDE_DOMAINS,
-                        default=", ".join(_effective(CONF_EXCLUDE_DOMAINS)),
-                    ): str,
+                        default=_effective(CONF_EXCLUDE_DOMAINS),
+                    ): TextSelector(TextSelectorConfig(multiple=True)),
                     vol.Optional(
                         CONF_EXCLUDE_ENTITIES,
-                        default=", ".join(_effective(CONF_EXCLUDE_ENTITIES)),
-                    ): str,
+                        default=_effective(CONF_EXCLUDE_ENTITIES),
+                    ): EntitySelector(EntitySelectorConfig(multiple=True)),
                     vol.Optional(
                         CONF_EXCLUDE_ATTRIBUTES,
-                        default=", ".join(_effective(CONF_EXCLUDE_ATTRIBUTES)),
-                    ): str,
+                        default=_effective(CONF_EXCLUDE_ATTRIBUTES),
+                    ): TextSelector(TextSelectorConfig(multiple=True)),
                 }
             ),
         )
