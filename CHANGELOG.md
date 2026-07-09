@@ -7,6 +7,26 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.2.2] — 2026-07-09
+
+### Fixed
+
+- **Critical: `import_from_recorder` (no explicit `entity_ids`) silently imported nothing on
+  any Home Assistant version using the normalized recorder schema (2023.4+).**
+  `RecorderImporter._fetch_all_entity_ids()` queried `States.entity_id` directly — but in the
+  modern schema that column is HA's own `UNUSED_LEGACY_COLUMN`, always `NULL` on every real row
+  (entity IDs live in `states_meta` now, joined via `metadata_id`). `SELECT DISTINCT
+  States.entity_id` therefore always returned exactly one bogus entity: `None`. That `None` was
+  then passed straight to `get_significant_states(entity_ids=[None])`, which legitimately
+  returns nothing — so the import completed "successfully" with `0 inserted, 0 skipped` and no
+  error at all, looking indistinguishable from a genuinely empty recorder. Confirmed live: a
+  recorder with 443 real entities and ~282k state rows reported `starting — 1 entities` and
+  imported zero rows. `import_from_external_db` was never affected — it already correctly reads
+  `entity_id` from `states_meta` via `ExternalRecorderReader`. Now queries `StatesMeta.entity_id`
+  instead, matching the reader's existing, correct approach.
+
+---
+
 ## [2.2.1] — 2026-07-08
 
 ### Fixed
