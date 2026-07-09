@@ -7,10 +7,25 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
+## [2.3.0] — 2026-07-09
+
+### Added
+
+- **`import_from_recorder` and `import_from_external_db` gained a new `exclude_attributes`
+  service field**, symmetric to the existing `exclude_entities` field. It merges with the
+  `exclude_attributes` configured on the integration rather than replacing it.
 
 ### Changed
 
+- **`import_from_recorder` and `import_from_external_db` now respect the integration's
+  configured `exclude_domains`, `exclude_entities`, and `exclude_attributes` filters**, instead
+  of ignoring them entirely as before. When `entity_ids` is left empty, the configured
+  `exclude_domains`/`exclude_entities` are applied to the resolved entity list exactly as they
+  are for live acquisition, unioned with any per-call `exclude_entities`. When `entity_ids` is
+  set explicitly, that list is treated as a deliberate scope and bypasses the configured
+  domain/entity excludes — only a per-call `exclude_entities` still trims it. The configured
+  `exclude_attributes` always apply, merged with the new per-call `exclude_attributes`,
+  regardless of how `entity_ids` was resolved.
 - **The `exclude_domains`, `exclude_entities`, and `exclude_attributes` filters (setup, reconfigure,
   and options steps of the config flow) are now real list fields instead of comma-separated text.**
   `exclude_entities` uses Home Assistant's entity picker (`entity` selector, `multiple: true`);

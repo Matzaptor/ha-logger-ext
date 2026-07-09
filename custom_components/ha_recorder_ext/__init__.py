@@ -50,6 +50,7 @@ _SERVICE_IMPORT_SCHEMA = vol.Schema(
         vol.Optional("end_date"): cv.string,
         vol.Optional("entity_ids"): vol.All(cv.ensure_list, [cv.entity_id]),
         vol.Optional("exclude_entities"): vol.All(cv.ensure_list, [cv.entity_id]),
+        vol.Optional("exclude_attributes"): vol.All(cv.ensure_list, [cv.string]),
     }
 )
 
@@ -66,6 +67,7 @@ _SERVICE_IMPORT_EXTERNAL_SCHEMA = vol.Schema(
         vol.Optional("end_date"): cv.string,
         vol.Optional("entity_ids"): vol.All(cv.ensure_list, [cv.entity_id]),
         vol.Optional("exclude_entities"): vol.All(cv.ensure_list, [cv.entity_id]),
+        vol.Optional("exclude_attributes"): vol.All(cv.ensure_list, [cv.string]),
     }
 )
 
@@ -114,6 +116,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raw_end: str | None = call.data.get("end_date")
         entity_ids: list[str] | None = call.data.get("entity_ids")
         exclude_entities: list[str] | None = call.data.get("exclude_entities")
+        exclude_attributes: list[str] | None = call.data.get("exclude_attributes")
 
         start_time: datetime | None = (
             datetime.fromisoformat(raw_start).replace(tzinfo=timezone.utc)
@@ -126,7 +129,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             else now
         )
 
-        importer = RecorderImporter(hass, coordinator.backend)
+        importer = RecorderImporter(
+            hass,
+            coordinator.backend,
+            coordinator.exclude_domains,
+            coordinator.exclude_entities,
+            coordinator.exclude_attributes,
+        )
 
         # Set synchronously (no `await` between the is_importing check above and
         # this call) so two rapid, back-to-back service calls can't both pass
@@ -136,7 +145,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         async def _run() -> None:
             try:
                 count = await importer.run(
-                    start_time, end_time, entity_ids or None, exclude_entities
+                    start_time,
+                    end_time,
+                    entity_ids or None,
+                    exclude_entities,
+                    exclude_attributes,
                 )
                 coordinator.async_set_importing(False, count)
             except Exception:
@@ -185,6 +198,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raw_end: str | None = call.data.get("end_date")
         entity_ids: list[str] | None = call.data.get("entity_ids")
         exclude_entities: list[str] | None = call.data.get("exclude_entities")
+        exclude_attributes: list[str] | None = call.data.get("exclude_attributes")
 
         start_time: datetime | None = (
             datetime.fromisoformat(raw_start).replace(tzinfo=timezone.utc)
@@ -198,7 +212,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
 
         reader = create_external_recorder_reader(db_type, dict(call.data))
-        importer = ExternalRecorderImporter(hass, coordinator.backend, reader)
+        importer = ExternalRecorderImporter(
+            hass,
+            coordinator.backend,
+            reader,
+            coordinator.exclude_domains,
+            coordinator.exclude_entities,
+            coordinator.exclude_attributes,
+        )
 
         # Set synchronously (no `await` between the is_importing check above and
         # this call) so two rapid, back-to-back service calls can't both pass
@@ -210,7 +231,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 await reader.connect()
                 try:
                     count = await importer.run(
-                        start_time, end_time, entity_ids or None, exclude_entities
+                        start_time,
+                        end_time,
+                        entity_ids or None,
+                        exclude_entities,
+                        exclude_attributes,
                     )
                     coordinator.async_set_importing(False, count)
                 finally:
@@ -342,6 +367,18 @@ class RecorderCoordinator:
     @property
     def flush_interval(self) -> int:
         return self._flush_interval
+
+    @property
+    def exclude_domains(self) -> frozenset[str]:
+        return self._exclude_domains
+
+    @property
+    def exclude_entities(self) -> frozenset[str]:
+        return self._exclude_entities
+
+    @property
+    def exclude_attributes(self) -> frozenset[str]:
+        return self._exclude_attributes
 
     def register_own_entity(self, entity_id: str) -> None:
         """Exclude an entity owned by this integration from being logged."""

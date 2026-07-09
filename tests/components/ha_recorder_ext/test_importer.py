@@ -118,6 +118,13 @@ class TestCollectFieldValues:
         fields = _collect_field_values(states)
         assert fields["state"] == [(TS0, "20"), (TS1, "21")]
 
+    def test_excluded_attributes_are_dropped(self) -> None:
+        states = [_state("sensor.t", "20", TS0, attrs={"unit": "°C", "battery_level": 90})]
+        fields = _collect_field_values(states, exclude_attributes=frozenset({"battery_level"}))
+        assert "unit" in fields
+        assert "battery_level" not in fields
+        assert "state" in fields
+
 
 # ---------------------------------------------------------------------------
 # Integration tests — RecorderImporter with mocked recorder
@@ -134,8 +141,17 @@ class _FakeImporter(RecorderImporter):
         states_map: dict[str, list[Any]],
         earliest: datetime | None = None,
         all_entity_ids: list[str] | None = None,
+        configured_exclude_domains: frozenset[str] | None = None,
+        configured_exclude_entities: frozenset[str] | None = None,
+        configured_exclude_attributes: frozenset[str] | None = None,
     ) -> None:
-        super().__init__(hass, backend)
+        super().__init__(
+            hass,
+            backend,
+            configured_exclude_domains,
+            configured_exclude_entities,
+            configured_exclude_attributes,
+        )
         self._states_map = states_map
         self._earliest = earliest
         self._all_entity_ids = all_entity_ids if all_entity_ids is not None else list(states_map)
@@ -182,8 +198,18 @@ class _FakeExternalImporter(ExternalRecorderImporter):
         states_map: dict[str, list[Any]],
         earliest: datetime | None = None,
         all_entity_ids: list[str] | None = None,
+        configured_exclude_domains: frozenset[str] | None = None,
+        configured_exclude_entities: frozenset[str] | None = None,
+        configured_exclude_attributes: frozenset[str] | None = None,
     ) -> None:
-        super().__init__(hass, backend, reader=MagicMock())
+        super().__init__(
+            hass,
+            backend,
+            reader=MagicMock(),
+            configured_exclude_domains=configured_exclude_domains,
+            configured_exclude_entities=configured_exclude_entities,
+            configured_exclude_attributes=configured_exclude_attributes,
+        )
         self._states_map = states_map
         self._earliest = earliest
         self._all_entity_ids = all_entity_ids if all_entity_ids is not None else list(states_map)
@@ -460,6 +486,129 @@ class TestRecorderImporter:
         importer = _FakeImporter(hass, backend, {}, all_entity_ids=[])
         inserted = await importer.run(TS0, TS1, entity_ids=None)
         assert inserted == 0
+
+    async def test_configured_exclude_domains_removes_matching_entities(
+        self, backend: SQLiteBackend
+    ) -> None:
+        states_map = {
+            "sensor.temp": [_state("sensor.temp", "20", TS0)],
+            "binary_sensor.motion": [_state("binary_sensor.motion", "on", TS0)],
+        }
+        hass = MagicMock()
+        importer = _EntityIdsCapturingImporter(
+            hass,
+            backend,
+            states_map,
+            configured_exclude_domains=frozenset({"binary_sensor"}),
+        )
+        await importer.run(TS0, TS1, entity_ids=None)
+        assert importer.received_entity_ids == ["sensor.temp"]
+
+    async def test_configured_exclude_entities_merges_with_call_exclude_entities(
+        self, backend: SQLiteBackend
+    ) -> None:
+        states_map = {
+            "sensor.temp": [_state("sensor.temp", "20", TS0)],
+            "sensor.noisy": [_state("sensor.noisy", "1", TS0)],
+            "sensor.other": [_state("sensor.other", "2", TS0)],
+        }
+        hass = MagicMock()
+        importer = _EntityIdsCapturingImporter(
+            hass,
+            backend,
+            states_map,
+            configured_exclude_entities=frozenset({"sensor.noisy"}),
+        )
+        await importer.run(TS0, TS1, entity_ids=None, exclude_entities=["sensor.other"])
+        assert importer.received_entity_ids == ["sensor.temp"]
+
+    async def test_configured_domain_and_entity_filters_bypassed_by_explicit_entity_ids(
+        self, backend: SQLiteBackend
+    ) -> None:
+        states_map = {
+            "sensor.temp": [_state("sensor.temp", "20", TS0)],
+            "binary_sensor.motion": [_state("binary_sensor.motion", "on", TS0)],
+        }
+        hass = MagicMock()
+        importer = _EntityIdsCapturingImporter(
+            hass,
+            backend,
+            states_map,
+            configured_exclude_domains=frozenset({"binary_sensor"}),
+            configured_exclude_entities=frozenset({"sensor.temp"}),
+        )
+        await importer.run(
+            TS0,
+            TS1,
+            entity_ids=["sensor.temp", "binary_sensor.motion"],
+        )
+        # Configured domain/entity excludes do not apply to an explicit entity_ids list.
+        assert importer.received_entity_ids == ["sensor.temp", "binary_sensor.motion"]
+
+    async def test_call_exclude_entities_still_applies_to_explicit_entity_ids(
+        self, backend: SQLiteBackend
+    ) -> None:
+        states_map = {
+            "sensor.temp": [_state("sensor.temp", "20", TS0)],
+            "sensor.noisy": [_state("sensor.noisy", "1", TS0)],
+        }
+        hass = MagicMock()
+        importer = _EntityIdsCapturingImporter(
+            hass,
+            backend,
+            states_map,
+            configured_exclude_entities=frozenset({"sensor.noisy"}),
+        )
+        await importer.run(
+            TS0,
+            TS1,
+            entity_ids=["sensor.temp", "sensor.noisy"],
+            exclude_entities=["sensor.noisy"],
+        )
+        assert importer.received_entity_ids == ["sensor.temp"]
+
+    async def test_configured_exclude_attributes_filters_imported_fields(
+        self, backend: SQLiteBackend
+    ) -> None:
+        states = [
+            _state("sensor.temp", "20", TS0, attrs={"unit": "°C", "battery_level": 90}),
+        ]
+        hass = MagicMock()
+        importer = _FakeImporter(
+            hass,
+            backend,
+            {"sensor.temp": states},
+            configured_exclude_attributes=frozenset({"battery_level"}),
+        )
+        inserted = await importer.run(TS0, TS1)
+        # "state" and "unit" fields import; "battery_level" is dropped by the
+        # configured exclude_attributes rule.
+        assert inserted == 2
+
+    async def test_call_exclude_attributes_merges_with_configured_exclude_attributes(
+        self, backend: SQLiteBackend
+    ) -> None:
+        states = [
+            _state(
+                "sensor.temp",
+                "20",
+                TS0,
+                attrs={"unit": "°C", "battery_level": 90, "signal_strength": -50},
+            ),
+        ]
+        hass = MagicMock()
+        importer = _FakeImporter(
+            hass,
+            backend,
+            {"sensor.temp": states},
+            configured_exclude_attributes=frozenset({"battery_level"}),
+        )
+        inserted = await importer.run(
+            TS0, TS1, exclude_attributes=["signal_strength"]
+        )
+        # Only "state" and "unit" survive: "battery_level" is excluded by
+        # config, "signal_strength" by the per-call list.
+        assert inserted == 2
 
     async def test_none_start_uses_earliest_recorder_state(self, backend: SQLiteBackend) -> None:
         states = [_state("sensor.temp", "20", TS0)]
