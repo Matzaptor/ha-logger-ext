@@ -20,6 +20,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   listener is removed; the options flow now subclasses `config_entries.OptionsFlowWithReload`,
   which reloads on its own after saving, and the reconfigure step already reloaded on its own.
 
+### Changed
+
+- **Minimum supported Python bumped from 3.12 to 3.13** (`pyproject.toml`, CI matrix,
+  `CONTRIBUTING.md`/README dev-setup instructions). Home Assistant itself dropped Python 3.12
+  support in core release `2025.2.0`, and `OptionsFlowWithReload` (used by the fix above) only
+  exists in HA releases that already require Python ≥3.13 — no installable Home Assistant
+  release runs on Python 3.12 and has this class, so a `test (3.12)` CI job could never again
+  reflect a real, current Home Assistant install. The CI matrix now runs `3.13` (required) and
+  `3.14` (experimental, unchanged).
+
 ---
 
 ## [2.3.0] — 2026-07-09

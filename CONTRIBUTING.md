@@ -103,8 +103,8 @@ ci: add Python 3.14 to test matrix
 git clone git@github.com:Matzaptor/ha-recorder-ext.git
 cd ha-recorder-ext
 
-# Create a virtual environment (Python 3.12+)
-python3.12 -m venv .venv
+# Create a virtual environment (Python 3.13+)
+python3.13 -m venv .venv
 source .venv/bin/activate
 
 # Install test dependencies
