@@ -7,6 +7,22 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **The `exclude_domains`, `exclude_entities`, and `exclude_attributes` filters (setup, reconfigure,
+  and options steps of the config flow) are now real list fields instead of comma-separated text.**
+  `exclude_entities` uses Home Assistant's entity picker (`entity` selector, `multiple: true`);
+  `exclude_domains` and `exclude_attributes` use a free-form multi-value text selector (`text`
+  selector, `multiple: true`), since domains and attribute names have no HA entity-registry
+  backing. The config entry `data`/`options` storage format (`list[str]`) is unchanged — only the
+  UI input widget changed, so no migration is needed for existing entries. The `services.yaml`
+  fields for `import_from_recorder` / `import_from_external_db` already used a native list
+  selector and required no changes.
+
+---
+
 ## [2.2.2] — 2026-07-09
 
 ### Fixed
