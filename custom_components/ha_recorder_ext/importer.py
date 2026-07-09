@@ -99,7 +99,7 @@ class RecorderImporter:
         """
         try:
             from homeassistant.components.recorder import get_instance
-            from homeassistant.components.recorder.db_schema import States
+            from homeassistant.components.recorder.db_schema import StatesMeta
             from sqlalchemy import distinct, select
         except ImportError:
             _LOGGER.error(
@@ -117,7 +117,7 @@ class RecorderImporter:
                 return [
                     row[0]
                     for row in session.execute(
-                        select(distinct(States.entity_id))
+                        select(distinct(StatesMeta.entity_id))
                     ).fetchall()
                 ]
 

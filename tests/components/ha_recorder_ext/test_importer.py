@@ -9,6 +9,8 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy import Integer, String, create_engine
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from custom_components.ha_recorder_ext.external_recorder_reader import (
     SQLiteExternalRecorderReader,
@@ -228,6 +230,94 @@ class _RecordingFakeImporter(_FakeImporter):
     ) -> dict[str, list[Any]]:
         self.fetch_windows.append((start, end))
         return await super()._fetch_states(start, end, entity_ids)
+
+
+class TestRecorderImporterRealEntityDiscovery:
+    """Regression coverage for RecorderImporter._fetch_all_entity_ids()'s real
+    (non-overridden) implementation, which talks to HA's actual recorder ORM.
+    Every other test in this file uses _FakeImporter subclasses that override
+    this method entirely, so nothing previously exercised the real query —
+    which is exactly how a schema mismatch shipped silently."""
+
+    async def test_queries_states_meta_not_the_legacy_states_entity_id_column(
+        self,
+    ) -> None:
+        """HA's modern (2023.4+) recorder schema normalizes entity_id out of
+        `states` into `states_meta`; `States.entity_id` becomes an
+        UNUSED_LEGACY_COLUMN that is always NULL for real rows. Querying it
+        directly (the original bug) returns exactly one bogus `None` "entity"
+        instead of the real list, which then gets fed into
+        get_significant_states() as entity_ids=[None] — silently returning
+        zero rows forever, with no error. Confirmed live against a real HA
+        instance: a recorder with 443 real entities reported "1 entities" and
+        imported nothing. This builds a minimal in-memory schema shaped like
+        HA's real one (a `states_meta` table with real entity_id values, and a
+        `states` table whose own entity_id column is always NULL, exactly
+        mirroring the legacy column) and asserts the importer resolves
+        entities via `states_meta`, not the dead column on `states`."""
+        import sys
+
+        class _FakeBase(DeclarativeBase):
+            pass
+
+        class _FakeStatesMeta(_FakeBase):
+            __tablename__ = "states_meta"
+            metadata_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+            entity_id: Mapped[str] = mapped_column(String)
+
+        class _FakeStates(_FakeBase):
+            __tablename__ = "states"
+            state_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+            # Mirrors HA's real UNUSED_LEGACY_COLUMN: always NULL on real rows.
+            entity_id: Mapped[str | None] = mapped_column(String, nullable=True)
+
+        engine = create_engine("sqlite:///:memory:")
+        _FakeBase.metadata.create_all(engine)
+        with Session(engine) as seed:
+            seed.add_all(
+                [
+                    _FakeStatesMeta(metadata_id=1, entity_id="sensor.a"),
+                    _FakeStatesMeta(metadata_id=2, entity_id="sensor.b"),
+                    _FakeStates(state_id=1, entity_id=None),
+                    _FakeStates(state_id=2, entity_id=None),
+                ]
+            )
+            seed.commit()
+
+        class _FakeRecorderSession:
+            def __enter__(self) -> Session:
+                self._session = Session(engine)
+                return self._session
+
+            def __exit__(self, *exc: Any) -> None:
+                self._session.close()
+
+        class _FakeRecorder:
+            def get_session(self) -> _FakeRecorderSession:
+                return _FakeRecorderSession()
+
+            async def async_add_executor_job(self, fn: Any) -> Any:
+                return fn()
+
+        fake_recorder_module = MagicMock()
+        fake_recorder_module.get_instance.return_value = _FakeRecorder()
+        fake_db_schema_module = MagicMock()
+        fake_db_schema_module.StatesMeta = _FakeStatesMeta
+        fake_db_schema_module.States = _FakeStates
+
+        hass = MagicMock()
+        importer = RecorderImporter(hass, MagicMock())
+
+        with patch.dict(
+            sys.modules,
+            {
+                "homeassistant.components.recorder": fake_recorder_module,
+                "homeassistant.components.recorder.db_schema": fake_db_schema_module,
+            },
+        ):
+            result = await importer._fetch_all_entity_ids()
+
+        assert sorted(result) == ["sensor.a", "sensor.b"]
 
 
 class TestRecorderImporterChunking:
