@@ -420,12 +420,27 @@ The default behavior must be local-first and privacy-respecting.
     with a clear `ServiceValidationError` instead of racing, using the existing
     `coordinator.is_importing` flag (the *Import in progress* sensor) as the lock, set
     synchronously before the background task is scheduled to close the race window
+32. the two import services (`import_from_recorder`, `import_from_external_db`) now
+    respect the integration's configured `exclude_domains`/`exclude_entities`/
+    `exclude_attributes` (previously the importer was completely disconnected from
+    that config and only honored an ad-hoc per-call `exclude_entities`).
+    `RecorderCoordinator` exposes them via new `exclude_domains`/`exclude_entities`/
+    `exclude_attributes` properties; `RecorderImporter`/`ExternalRecorderImporter`
+    accept them as constructor arguments and union them with per-call exclusion
+    lists rather than replacing them. When `entity_ids` is omitted, configured
+    `exclude_domains`/`exclude_entities` apply to the resolved entity list exactly
+    as they do for live acquisition; when `entity_ids` is passed explicitly, that
+    scope is treated as deliberate and bypasses the configured domain/entity
+    excludes (only a per-call `exclude_entities` can still trim it). A new
+    `exclude_attributes` per-call service field was added, symmetric to
+    `exclude_entities`, and always merges with the configured
+    `exclude_attributes` regardless of `entity_ids`.
 
 ### Next
 
-32. data retention policy
-33. export tooling
-34. re-enable DuckDB backend once upstream fixes Python 3.14 shutdown crash
+33. data retention policy
+34. export tooling
+35. re-enable DuckDB backend once upstream fixes Python 3.14 shutdown crash
 
 ### Permanent constraints
 

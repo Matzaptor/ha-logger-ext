@@ -42,12 +42,29 @@ import_from_recorder:
         Entity IDs to skip, applied after entity_ids resolves to a list.
         Useful to leave out a specific high-volume entity (e.g. a device
         tracker that updates on nearly every reading) without having to
-        enumerate every other entity in entity_ids.
+        enumerate every other entity in entity_ids. If entity_ids is left
+        empty, the exclude_domains and exclude_entities configured on the
+        integration also apply automatically, in addition to this list. If
+        entity_ids is set explicitly, only this list is applied — an entity
+        listed in entity_ids is imported even if it falls under a configured
+        exclude_domains or exclude_entities rule.
       required: false
       example:
         - sensor.noisy_tracker
       selector:
         entity:
+          multiple: true
+    exclude_attributes:
+      name: Exclude attributes
+      description: >
+        Attribute names to skip for this import, merged with the
+        exclude_attributes configured on the integration (which always
+        apply, regardless of entity_ids).
+      required: false
+      example:
+        - battery_level
+      selector:
+        text:
           multiple: true
 
 import_from_external_db:
@@ -165,10 +182,27 @@ import_from_external_db:
         Entity IDs to skip, applied after entity_ids resolves to a list.
         Useful to leave out a specific high-volume entity (e.g. a device
         tracker that updates on nearly every reading) without having to
-        enumerate every other entity in entity_ids.
+        enumerate every other entity in entity_ids. If entity_ids is left
+        empty, the exclude_domains and exclude_entities configured on the
+        integration also apply automatically, in addition to this list. If
+        entity_ids is set explicitly, only this list is applied — an entity
+        listed in entity_ids is imported even if it falls under a configured
+        exclude_domains or exclude_entities rule.
       required: false
       example:
         - sensor.noisy_tracker
       selector:
         entity:
+          multiple: true
+    exclude_attributes:
+      name: Exclude attributes
+      description: >
+        Attribute names to skip for this import, merged with the
+        exclude_attributes configured on the integration (which always
+        apply, regardless of entity_ids).
+      required: false
+      example:
+        - battery_level
+      selector:
+        text:
           multiple: true

@@ -419,6 +419,116 @@ class TestImportServices:
         )
         await hass.async_block_till_done()
 
+    async def test_import_from_recorder_accepts_exclude_attributes(
+        self, hass: HomeAssistant, patched_factory
+    ) -> None:
+        entry = _make_entry(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        # Must not raise a schema validation error for a well-formed list.
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_IMPORT_FROM_RECORDER,
+            {"exclude_attributes": ["battery_level"]},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+    async def test_import_from_recorder_passes_configured_filters_to_importer(
+        self, hass: HomeAssistant, patched_factory
+    ) -> None:
+        entry = _make_entry(
+            hass,
+            **{
+                CONF_EXCLUDE_DOMAINS: ["binary_sensor"],
+                CONF_EXCLUDE_ENTITIES: ["sensor.noisy"],
+                CONF_EXCLUDE_ATTRIBUTES: ["battery_level"],
+            },
+        )
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = entry.runtime_data
+        mock_importer = MagicMock()
+        mock_importer.run = AsyncMock(return_value=0)
+        with patch(
+            "custom_components.ha_recorder_ext.importer.RecorderImporter",
+            return_value=mock_importer,
+        ) as mock_importer_cls:
+            await hass.services.async_call(
+                DOMAIN,
+                SERVICE_IMPORT_FROM_RECORDER,
+                {"exclude_attributes": ["signal_strength"]},
+                blocking=True,
+            )
+            await hass.async_block_till_done()
+
+        mock_importer_cls.assert_called_once_with(
+            hass,
+            coordinator.backend,
+            coordinator.exclude_domains,
+            coordinator.exclude_entities,
+            coordinator.exclude_attributes,
+        )
+        mock_importer.run.assert_awaited_once()
+        args = mock_importer.run.await_args.args
+        assert args[3] is None  # exclude_entities not passed in this call
+        assert args[4] == ["signal_strength"]  # exclude_attributes forwarded
+
+    async def test_import_from_external_db_passes_configured_filters_to_importer(
+        self, hass: HomeAssistant, patched_factory, tmp_path
+    ) -> None:
+        entry = _make_entry(
+            hass,
+            **{
+                CONF_EXCLUDE_DOMAINS: ["binary_sensor"],
+                CONF_EXCLUDE_ENTITIES: ["sensor.noisy"],
+                CONF_EXCLUDE_ATTRIBUTES: ["battery_level"],
+            },
+        )
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = entry.runtime_data
+        mock_reader = AsyncMock()
+        mock_importer = MagicMock()
+        mock_importer.run = AsyncMock(return_value=0)
+        with (
+            patch(
+                "custom_components.ha_recorder_ext.external_recorder_reader"
+                ".create_external_recorder_reader",
+                return_value=mock_reader,
+            ),
+            patch(
+                "custom_components.ha_recorder_ext.importer.ExternalRecorderImporter",
+                return_value=mock_importer,
+            ) as mock_importer_cls,
+        ):
+            await hass.services.async_call(
+                DOMAIN,
+                SERVICE_IMPORT_FROM_EXTERNAL_DB,
+                {
+                    CONF_DB_TYPE: DB_TYPE_SQLITE,
+                    CONF_DB_PATH: str(tmp_path / "external.db"),
+                    "exclude_attributes": ["signal_strength"],
+                },
+                blocking=True,
+            )
+            await hass.async_block_till_done()
+
+        mock_importer_cls.assert_called_once_with(
+            hass,
+            coordinator.backend,
+            mock_reader,
+            coordinator.exclude_domains,
+            coordinator.exclude_entities,
+            coordinator.exclude_attributes,
+        )
+        mock_importer.run.assert_awaited_once()
+        args = mock_importer.run.await_args.args
+        assert args[4] == ["signal_strength"]  # exclude_attributes forwarded
+
 
 class TestFlushRollback:
     async def test_flush_rollback_on_commit_failure(

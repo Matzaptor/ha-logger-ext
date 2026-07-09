@@ -66,6 +66,7 @@ def _ensure_utc(dt: datetime) -> datetime:
 
 def _collect_field_values(
     states: list[Any],
+    exclude_attributes: frozenset[str] = frozenset(),
 ) -> dict[str, list[tuple[datetime, Any]]]:
     """Build a per-field list of (timestamp, value) pairs from a state list."""
     fields: dict[str, list[tuple[datetime, Any]]] = {}
@@ -73,6 +74,8 @@ def _collect_field_values(
         ts = _ensure_utc(state.last_updated)
         fields.setdefault("state", []).append((ts, state.state))
         for attr_name, attr_value in state.attributes.items():
+            if attr_name in exclude_attributes:
+                continue
             fields.setdefault(attr_name, []).append((ts, attr_value))
     return fields
 
@@ -88,9 +91,21 @@ class RecorderImporter:
     # actually running instead of always reading "import_from_recorder".
     _LOG_PREFIX: ClassVar[str] = "import_from_recorder"
 
-    def __init__(self, hass: HomeAssistant, backend: StorageBackend) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        backend: StorageBackend,
+        configured_exclude_domains: frozenset[str] | None = None,
+        configured_exclude_entities: frozenset[str] | None = None,
+        configured_exclude_attributes: frozenset[str] | None = None,
+    ) -> None:
         self._hass = hass
         self._backend = backend
+        self._configured_exclude_domains = configured_exclude_domains or frozenset()
+        self._configured_exclude_entities = configured_exclude_entities or frozenset()
+        self._configured_exclude_attributes = (
+            configured_exclude_attributes or frozenset()
+        )
 
     async def _fetch_all_entity_ids(self) -> list[str]:
         """Return all entity IDs that have states in the recorder.
@@ -189,8 +204,15 @@ class RecorderImporter:
         end_time: datetime,
         entity_ids: list[str] | None = None,
         exclude_entities: list[str] | None = None,
+        exclude_attributes: list[str] | None = None,
     ) -> int:
         """Run the import. Returns the total number of intervals inserted."""
+        # entity_ids explicitly passed by the caller is treated as a deliberate
+        # scope and bypasses the configured exclude_domains/exclude_entities
+        # (only exclude_entities from this same call can still trim it). When
+        # entity_ids is omitted, the configured exclude_domains/exclude_entities
+        # apply exactly as they do for live acquisition.
+        apply_configured_entity_filters = entity_ids is None
         if entity_ids is None:
             entity_ids = await self._fetch_all_entity_ids()
             if not entity_ids:
@@ -199,21 +221,44 @@ class RecorderImporter:
                 )
                 return 0
 
-        if exclude_entities:
-            excluded = set(exclude_entities)
+        effective_exclude_entities = set(exclude_entities or [])
+        if apply_configured_entity_filters:
+            effective_exclude_entities |= self._configured_exclude_entities
+
+        if apply_configured_entity_filters and self._configured_exclude_domains:
             before = len(entity_ids)
-            entity_ids = [e for e in entity_ids if e not in excluded]
+            entity_ids = [
+                e
+                for e in entity_ids
+                if e.split(".")[0] not in self._configured_exclude_domains
+            ]
+            if len(entity_ids) != before:
+                _LOGGER.info(
+                    "%s: excluding %d entities by configured domain (%d remaining)",
+                    self._LOG_PREFIX,
+                    before - len(entity_ids),
+                    len(entity_ids),
+                )
+
+        if effective_exclude_entities:
+            before = len(entity_ids)
+            entity_ids = [e for e in entity_ids if e not in effective_exclude_entities]
             _LOGGER.info(
                 "%s: excluding %d entities (%d remaining)",
                 self._LOG_PREFIX,
                 before - len(entity_ids),
                 len(entity_ids),
             )
-            if not entity_ids:
-                _LOGGER.info(
-                    "%s: all entities excluded, nothing to import", self._LOG_PREFIX
-                )
-                return 0
+
+        if not entity_ids:
+            _LOGGER.info(
+                "%s: all entities excluded, nothing to import", self._LOG_PREFIX
+            )
+            return 0
+
+        effective_exclude_attributes = (
+            self._configured_exclude_attributes | set(exclude_attributes or [])
+        )
 
         if start_time is None:
             start_time = await self._fetch_earliest_state_time()
@@ -261,7 +306,9 @@ class RecorderImporter:
             entity_count = len(states_map)
             for processed, (entity_id, states) in enumerate(states_map.items(), start=1):
                 try:
-                    ins, skp = await self._import_entity_states(entity_id, states)
+                    ins, skp = await self._import_entity_states(
+                        entity_id, states, effective_exclude_attributes
+                    )
                 except Exception:
                     _LOGGER.exception(
                         "%s: failed importing entity %s in chunk %s → %s",
@@ -306,7 +353,10 @@ class RecorderImporter:
         return total_inserted
 
     async def _import_entity_states(
-        self, entity_id: str, states: list[Any]
+        self,
+        entity_id: str,
+        states: list[Any],
+        exclude_attributes: frozenset[str] = frozenset(),
     ) -> tuple[int, int]:
         """Reconstruct validity intervals for one entity and insert gaps.
 
@@ -319,7 +369,7 @@ class RecorderImporter:
         ts0 = _ensure_utc(states[0].last_updated)
         entity_pk = await self._backend.get_or_create_entity(entity_id, domain, ts0)
 
-        field_values = _collect_field_values(states)
+        field_values = _collect_field_values(states, exclude_attributes)
         _LOGGER.debug(
             "%s: processing %s (%d states, %d fields)",
             self._LOG_PREFIX,
@@ -399,8 +449,17 @@ class ExternalRecorderImporter(RecorderImporter):
         hass: HomeAssistant,
         backend: StorageBackend,
         reader: ExternalRecorderReader,
+        configured_exclude_domains: frozenset[str] | None = None,
+        configured_exclude_entities: frozenset[str] | None = None,
+        configured_exclude_attributes: frozenset[str] | None = None,
     ) -> None:
-        super().__init__(hass, backend)
+        super().__init__(
+            hass,
+            backend,
+            configured_exclude_domains,
+            configured_exclude_entities,
+            configured_exclude_attributes,
+        )
         self._reader = reader
 
     async def _fetch_all_entity_ids(self) -> list[str]:
