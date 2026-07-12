@@ -7,6 +7,21 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.4.0] — 2026-07-12
+
+### Added
+
+- **Inline brand icon** at `custom_components/ha_recorder_ext/brand/icon.png`. Since Home
+  Assistant 2026.3, `home-assistant/brands` no longer accepts pull requests for
+  `custom_integrations/*` and auto-closes them, directing contributors to ship brand images
+  inside the integration itself instead; Home Assistant serves them locally through
+  `/api/brands/integration/ha_recorder_ext/...` with no `manifest.json` changes required. This
+  is what makes the integration's icon actually appear under **Settings → Devices & Services**.
+  The existing `hacs.json` `icon` field is left unchanged as a fallback, since the HACS panel
+  itself does not yet read local brand icons ([hacs/integration#5171](https://github.com/hacs/integration/issues/5171)).
+
+---
+
 ## [2.3.1] — 2026-07-09
 
 ### Fixed
