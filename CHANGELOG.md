@@ -7,6 +7,29 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.4.1] — 2026-07-19
+
+### Added
+
+- **`hacs/action` and `hassfest` validation** now run in CI on every push/PR to `dev/main`
+  (`.github/workflows/hacs-validate.yml`), required ahead of a `hacs/default` submission.
+
+### Fixed
+
+- **Hassfest validation failure**: `importer.py` conditionally imports
+  `homeassistant.components.recorder` (only when the `import_from_recorder` service runs,
+  already guarded by `try`/`except ImportError`), but `manifest.json` did not declare it. Added
+  to `after_dependencies` rather than `dependencies`, since the native recorder must not be
+  forced to load just because this integration is set up — only ordered after it if the user
+  has it enabled.
+- **HACS validation failure**: `hacs.json`'s `icon` key is rejected by the current HACS schema
+  now that brand images are inline (`custom_components/ha_recorder_ext/brand/`, added in
+  v2.4.0); removed rather than kept as a fallback.
+- **Hassfest manifest ordering**: `manifest.json` keys are now sorted `domain`, `name`, then
+  strict alphabetical order, as hassfest requires.
+
+---
+
 ## [2.4.0] — 2026-07-12
 
 ### Added
