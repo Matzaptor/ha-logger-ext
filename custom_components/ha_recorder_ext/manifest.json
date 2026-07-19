@@ -1,17 +1,18 @@
 {
   "domain": "ha_recorder_ext",
   "name": "HA External Recorder",
-  "version": "2.4.0",
+  "after_dependencies": ["recorder"],
+  "codeowners": ["@Matzaptor"],
   "config_flow": true,
+  "dependencies": [],
   "documentation": "https://github.com/Matzaptor/ha-recorder-ext",
+  "iot_class": "local_push",
   "issue_tracker": "https://github.com/Matzaptor/ha-recorder-ext/issues",
   "requirements": [
     "aiosqlite>=0.19.0",
     "aiomysql>=0.2.0",
     "asyncpg>=0.29.0"
   ],
-  "dependencies": [],
-  "codeowners": ["@Matzaptor"],
-  "iot_class": "local_push",
-  "single_config_entry": true
+  "single_config_entry": true,
+  "version": "2.4.0"
 }
