@@ -1,5 +1,4 @@
 {
   "name": "HA External Recorder",
-  "render_readme": true,
-  "icon": "https://raw.githubusercontent.com/Matzaptor/ha-recorder-ext/dev/main/custom_components/ha_recorder_ext/icon.png"
+  "render_readme": true
 }
