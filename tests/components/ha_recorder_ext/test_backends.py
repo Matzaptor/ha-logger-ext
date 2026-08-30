@@ -13,11 +13,16 @@ from custom_components.ha_recorder_ext.storage.base import ObservationRecord
 from custom_components.ha_recorder_ext.storage.factory import create_backend
 
 try:
-    from custom_components.ha_recorder_ext.storage.duckdb import DuckDBBackend
+    import duckdb as _duckdb_pkg  # noqa: F401
     _DUCKDB_AVAILABLE = True
 except ImportError:
     _DUCKDB_AVAILABLE = False
-    DuckDBBackend = None  # type: ignore[assignment,misc]
+
+# storage/duckdb.py imports the duckdb package lazily (it's not a declared
+# requirement, since the backend is disabled — see const.py), so this import
+# always succeeds regardless of whether the duckdb package itself is
+# installed; _DUCKDB_AVAILABLE above is what actually gates the tests below.
+from custom_components.ha_recorder_ext.storage.duckdb import DuckDBBackend
 from custom_components.ha_recorder_ext.storage.uuid7 import uuid7
 from custom_components.ha_recorder_ext.const import (
     CONF_DB_HOST,
