@@ -7,6 +7,25 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.4.2] — 2026-08-29
+
+### Fixed
+
+- **Missing minimum Home Assistant version declaration.** `config_flow.py` subclasses
+  `config_entries.OptionsFlowWithReload`, evaluated at module import time; that class does not
+  exist before Home Assistant 2025.8.0. With no floor declared, the integration was offered to
+  every Home Assistant version, and on anything older the config flow module failed to import
+  with an `AttributeError` that pointed nowhere useful. Added `"homeassistant": "2025.8.0"` to
+  `hacs.json` — **not** `manifest.json`: hassfest explicitly rejects a `homeassistant` key in a
+  custom integration's manifest (`extra keys not allowed`), a known discrepancy since
+  [hacs/documentation#44](https://github.com/hacs/documentation/issues/44); `hacs.json` is the
+  key HACS itself reads to warn about incompatible installs. Everything else the integration
+  uses sits below that floor already (`entry.runtime_data` needs 2024.6.0,
+  `_get_reconfigure_entry` needs 2024.11.0). Reported during the `hacs/default` submission
+  review (hacs/default#9357); closes #51.
+
+---
+
 ## [2.4.1] — 2026-07-19
 
 ### Added
