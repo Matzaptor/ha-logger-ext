@@ -397,24 +397,28 @@ class MySQLBackend(StorageBackend):
                 f"did not complete within {_QUERY_TIMEOUT_SECONDS}s"
             ) from err
 
-    async def _execute(
-        self, sql: str, params: tuple | None = None
-    ) -> aiomysql.cursors.Cursor:
-        """Execute a statement on the active connection (transaction mode) or acquire a temporary one."""
+    async def _execute(self, sql: str, params: tuple | None = None) -> None:
+        """Execute a statement on the active connection (transaction mode) or acquire a temporary one.
+
+        No caller uses the cursor afterwards, so unlike a select this doesn't
+        need to return it — closing it here (via `async with`, matching
+        _fetchone) instead of leaving it open is what actually matters: an
+        unclosed cursor per call was accumulating against the connection for
+        the life of the process on the busiest code path this backend has.
+        """
         async with self._serialize():
             if self._in_transaction:
                 conn = self._active_conn()
-                cur = await conn.cursor()
-                await self._with_timeout(cur.execute(sql, params or ()))
-                return cur
+                async with conn.cursor() as cur:
+                    await self._with_timeout(cur.execute(sql, params or ()))
+                return
 
             assert self._pool is not None
             conn = await self._acquire()
             try:
-                cur = await conn.cursor()
-                await self._with_timeout(cur.execute(sql, params or ()))
-                await conn.commit()
-                return cur
+                async with conn.cursor() as cur:
+                    await self._with_timeout(cur.execute(sql, params or ()))
+                    await conn.commit()
             finally:
                 self._pool.release(conn)
 
