@@ -7,6 +7,20 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.4.8] — 2026-08-29
+
+### Fixed
+
+- **MySQL backend: cursor leak in `_execute()`.** Unlike `_fetchone()`, `_execute()` acquired a
+  cursor with a bare `await conn.cursor()` and returned it to the caller without ever closing
+  it. None of its three callers (`insert_observation`, `update_last_seen`,
+  `get_or_create_entity` — the busiest code path in the whole backend, one call per observation
+  flush) used the returned cursor, so it just accumulated against the connection for the life of
+  the process. `_execute()` now acquires its cursor with `async with`, matching `_fetchone()`'s
+  existing pattern, and returns `None`. Verified directly against the real code with mocked
+  `aiomysql`: every `_execute()` call now enters and exits its cursor context exactly once.
+  Reported during the `hacs/default` submission review (hacs/default#9357); closes #55.
+
 ## [2.4.7] — 2026-08-29
 
 ### Fixed
