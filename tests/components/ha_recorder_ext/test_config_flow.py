@@ -646,3 +646,92 @@ async def test_reconfigure_server_entry_prefills_host(hass: HomeAssistant) -> No
     defaults = {k.schema: k.default() for k in schema}
     assert defaults[CONF_DB_HOST] == "db.local"
     assert defaults[CONF_DB_PORT] == DEFAULT_MYSQL_PORT
+
+
+@_reconfigure_available
+async def test_reconfigure_server_entry_does_not_prefill_password(
+    hass: HomeAssistant,
+) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_DB_TYPE: DB_TYPE_MYSQL,
+            CONF_DB_HOST: "db.local",
+            CONF_DB_PORT: DEFAULT_MYSQL_PORT,
+            CONF_DB_NAME: "ha_logger",
+            CONF_DB_USERNAME: "ha_user",
+            CONF_DB_PASSWORD: "secret",
+            CONF_EXCLUDE_DOMAINS: [],
+            CONF_EXCLUDE_ENTITIES: [],
+            CONF_EXCLUDE_ATTRIBUTES: [],
+        },
+        options={},
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": _SOURCE_RECONFIGURE, "entry_id": entry.entry_id},
+    )
+    schema = result["data_schema"].schema
+    defaults = {k.schema: k.default() for k in schema}
+    # The stored secret must never be echoed back into the form.
+    assert defaults[CONF_DB_PASSWORD] == ""
+
+
+@_reconfigure_available
+async def test_reconfigure_server_blank_password_keeps_existing(
+    hass: HomeAssistant,
+) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_DB_TYPE: DB_TYPE_MYSQL,
+            CONF_DB_HOST: "db.local",
+            CONF_DB_PORT: DEFAULT_MYSQL_PORT,
+            CONF_DB_NAME: "ha_logger",
+            CONF_DB_USERNAME: "ha_user",
+            CONF_DB_PASSWORD: "secret",
+            CONF_EXCLUDE_DOMAINS: [],
+            CONF_EXCLUDE_ENTITIES: [],
+            CONF_EXCLUDE_ATTRIBUTES: [],
+        },
+        options={},
+    )
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.ha_recorder_ext.create_backend") as mock_factory:
+        backend = AsyncMock()
+        backend.get_latest_observation.return_value = None
+        backend.get_or_create_entity.return_value = uuid.uuid4()
+        mock_factory.return_value = backend
+
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": _SOURCE_RECONFIGURE, "entry_id": entry.entry_id},
+        )
+        with patch(
+            "custom_components.ha_recorder_ext.config_flow._test_backend",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                user_input={
+                    CONF_DB_HOST: "db.remote",
+                    CONF_DB_PORT: DEFAULT_MYSQL_PORT,
+                    CONF_DB_NAME: "ha_logger",
+                    CONF_DB_USERNAME: "ha_user",
+                    CONF_DB_PASSWORD: "",
+                },
+            )
+        await hass.async_block_till_done()
+
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data[CONF_DB_HOST] == "db.remote"
+    # Left blank on purpose: the original password must survive, not be
+    # overwritten with an empty string.
+    assert entry.data[CONF_DB_PASSWORD] == "secret"
