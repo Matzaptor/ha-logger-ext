@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
@@ -303,13 +304,26 @@ class HaRecorderExtOptionsFlow(config_entries.OptionsFlowWithReload):
         self, user_input: dict | None = None
     ) -> FlowResult:
         if user_input is not None:
-            return self.async_create_entry(data={
+            new_options: dict[str, Any] = {
                 CONF_FLUSH_INTERVAL: user_input[CONF_FLUSH_INTERVAL],
                 CONF_QUEUE_MAX_SIZE: user_input[CONF_QUEUE_MAX_SIZE],
-                CONF_EXCLUDE_DOMAINS: user_input.get(CONF_EXCLUDE_DOMAINS, []),
-                CONF_EXCLUDE_ENTITIES: user_input.get(CONF_EXCLUDE_ENTITIES, []),
-                CONF_EXCLUDE_ATTRIBUTES: user_input.get(CONF_EXCLUDE_ATTRIBUTES, []),
-            })
+            }
+            # The form promises "leave empty to keep the current setting" for
+            # each exclude field. An empty list is still a present key, so
+            # writing it unconditionally would make it win over the
+            # setup-time value in _effective() below instead of falling back
+            # to it — silently disabling a filter the user never asked to
+            # clear. Omitting the key when the submitted value is empty is
+            # what actually keeps that promise.
+            for key in (
+                CONF_EXCLUDE_DOMAINS,
+                CONF_EXCLUDE_ENTITIES,
+                CONF_EXCLUDE_ATTRIBUTES,
+            ):
+                value = user_input.get(key)
+                if value:
+                    new_options[key] = value
+            return self.async_create_entry(data=new_options)
 
         opts = self._config_entry.options
         data = self._config_entry.data
