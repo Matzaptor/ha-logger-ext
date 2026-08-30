@@ -6,11 +6,12 @@ import uuid
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
-
-import duckdb
+from typing import TYPE_CHECKING, Any
 
 from .base import ObservationRecord, StorageBackend
+
+if TYPE_CHECKING:
+    import duckdb
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -108,7 +109,9 @@ LIMIT 1
 
 # Maps target schema version → sync migration function.
 # Each function receives an open duckdb.DuckDBPyConnection and must not commit.
-_MigrationFn = Callable[[duckdb.DuckDBPyConnection], None]
+# String forward-ref: duckdb is only imported for type checking (see below), so
+# the real name isn't in scope at module load time for users without it installed.
+_MigrationFn = Callable[["duckdb.DuckDBPyConnection"], None]
 _MIGRATIONS: dict[int, _MigrationFn] = {}
 
 
@@ -146,6 +149,8 @@ class DuckDBBackend(StorageBackend):
 
     async def initialize(self) -> None:
         def _open() -> duckdb.DuckDBPyConnection:
+            import duckdb
+
             return duckdb.connect(str(self._db_path))
 
         self._conn = await self._run_sync(_open)

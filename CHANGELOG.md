@@ -7,6 +7,26 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.4.3] — 2026-08-29
+
+### Fixed
+
+- **Unreachable `import duckdb` shipped 11KB of dead code that would fail the instant it was
+  ever actually imported.** `storage/duckdb.py` had a top-level `import duckdb`, but `duckdb`
+  is not a declared requirement (the backend is intentionally disabled, see `factory.py` and
+  the CHANGELOG entry for item 30). Nothing in the reachable production code path imports this
+  module today, but anything that did — an IDE, a static analysis tool, a future refactor — would
+  crash immediately for every user, none of whom have `duckdb` installed. The `duckdb` import is
+  now `TYPE_CHECKING`-only at module level, with a real import deferred to the one place that
+  actually opens a connection (`DuckDBBackend.initialize()`); this mirrors the existing lazy-import
+  pattern `factory.py` already uses for the optional `aiomysql`/`asyncpg` backends. Also fixed
+  `tests/components/ha_recorder_ext/test_backends.py`'s `_DUCKDB_AVAILABLE` skip-detection, which
+  used to infer availability from whether importing `DuckDBBackend` itself failed — that import
+  always succeeds now, so it checks for the real `duckdb` package directly instead. Reported
+  during the `hacs/default` submission review (hacs/default#9357); closes #58.
+
+---
+
 ## [2.4.2] — 2026-08-29
 
 ### Fixed
