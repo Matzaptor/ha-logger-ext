@@ -7,6 +7,23 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.4.6] — 2026-08-29
+
+### Fixed
+
+- **Emptying an exclude list in the options flow silently disabled the filter instead of
+  preserving the setup-time value, contradicting the UI's own promise.** All three exclude
+  fields say "Leave empty to keep the current setting," but the options flow wrote
+  `user_input.get(CONF_EXCLUDE_*, [])` unconditionally; an empty list is still a present key, so
+  it always won over the setup-time value in `_effective()`'s fallback (`opts.get(key,
+  data.get(key, []))`). Clearing a field in the UI silently turned that filter off instead of
+  falling back to what was configured at setup. The options flow now omits a field's key
+  entirely when the submitted value is empty, so `_effective()`'s existing fallback actually
+  takes effect — matching the documented behavior instead of the UI text needing to change to
+  match the code. Updated a test that asserted the old (buggy) behavior and added an end-to-end
+  regression test: a setup-time exclusion survives being left blank in the options flow.
+  Reported during the `hacs/default` submission review (hacs/default#9357); closes #56.
+
 ## [2.4.5] — 2026-08-29
 
 ### Fixed

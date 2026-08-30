@@ -445,8 +445,58 @@ async def test_options_flow_saves_filter_as_list(hass: HomeAssistant) -> None:
 
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert entry.options[CONF_EXCLUDE_DOMAINS] == ["automation", "sun"]
-    assert entry.options[CONF_EXCLUDE_ENTITIES] == []
     assert entry.options[CONF_EXCLUDE_ATTRIBUTES] == ["icon"]
+    # Submitted empty: omitted from options entirely, so the setup-time value
+    # (also [] here) is what actually takes effect via _effective()'s
+    # fallback — not an unconditionally written empty list that would win
+    # over it and silently disable a filter the user never asked to clear.
+    assert CONF_EXCLUDE_ENTITIES not in entry.options
+
+
+async def test_options_flow_blank_exclude_domains_keeps_setup_value(
+    hass: HomeAssistant,
+) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_DB_TYPE: DB_TYPE_SQLITE,
+            CONF_DB_PATH: DEFAULT_DB_PATH,
+            CONF_EXCLUDE_DOMAINS: ["sun"],
+            CONF_EXCLUDE_ENTITIES: [],
+            CONF_EXCLUDE_ATTRIBUTES: [],
+        },
+        options={},
+    )
+    entry.add_to_hass(hass)
+
+    with patch("custom_components.ha_recorder_ext.create_backend") as mock_factory:
+        backend = AsyncMock()
+        backend.get_latest_observation.return_value = None
+        backend.get_or_create_entity.return_value = uuid.uuid4()
+        mock_factory.return_value = backend
+
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            user_input={
+                CONF_FLUSH_INTERVAL: DEFAULT_FLUSH_INTERVAL,
+                CONF_QUEUE_MAX_SIZE: DEFAULT_QUEUE_MAX_SIZE,
+                CONF_EXCLUDE_DOMAINS: [],
+                CONF_EXCLUDE_ENTITIES: [],
+                CONF_EXCLUDE_ATTRIBUTES: [],
+            },
+        )
+        await hass.async_block_till_done()
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    coordinator = entry.runtime_data
+    # Left blank in the options flow ("leave empty to keep the current
+    # setting"): the setup-time exclusion for "sun" must still be in effect,
+    # not silently cleared.
+    assert not coordinator._should_track_entity("sun.sun")
 
 
 async def test_options_flow_prefills_filters_from_data(hass: HomeAssistant) -> None:
