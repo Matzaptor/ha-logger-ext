@@ -7,6 +7,25 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.4.7] — 2026-08-29
+
+### Fixed
+
+- **MySQL: observation indexes were never created on real MySQL servers.** `_SQL_CREATE_INDEXES`
+  used `CREATE INDEX IF NOT EXISTS`, which MariaDB accepts but MySQL does not — all three
+  statements failed with a parse error, and the handler only recognized errno 1061 (duplicate
+  key name) as ignorable, silently swallowing the actual MySQL syntax error as a generic
+  warning. On real MySQL 8+ deployments, `observations` shipped with no secondary indexes at
+  all, and `get_latest_observation` / `has_observations_in_range` — both hot paths, called on
+  every state change and on every row during an import — became full table scans on a table
+  designed to reach millions of rows. Each index's existence is now checked against
+  `information_schema.STATISTICS` first, with a bare `CREATE INDEX` (no `IF NOT EXISTS`) issued
+  only when absent. Verified directly against the real code with mocked `aiomysql`: an
+  already-existing index is skipped without attempting `CREATE INDEX`, and a fresh schema
+  creates all three. Added `test_initialize_skips_index_creation_when_already_exists` covering
+  the case the old tests never exercised (they only simulated a schema where nothing exists
+  yet). Reported during the `hacs/default` submission review (hacs/default#9357); closes #53.
+
 ## [2.4.6] — 2026-08-29
 
 ### Fixed

@@ -63,15 +63,30 @@ CREATE TABLE IF NOT EXISTS observations (
 )
 """
 
-_SQL_CREATE_INDEXES = (
-    "CREATE INDEX IF NOT EXISTS idx_obs_entity_field "
-    "ON observations(entity_pk, field(64))",
+# (index name, creation SQL) pairs. No "IF NOT EXISTS": MariaDB accepts that
+# syntax on CREATE INDEX, but MySQL does not (parse error) — existence is
+# checked explicitly against information_schema.STATISTICS instead, see
+# _apply_migrations().
+_INDEX_DEFINITIONS = (
+    (
+        "idx_obs_entity_field",
+        "CREATE INDEX idx_obs_entity_field ON observations(entity_pk, field(64))",
+    ),
+    (
+        "idx_obs_entity_field_last",
+        "CREATE INDEX idx_obs_entity_field_last "
+        "ON observations(entity_pk, field(64), last_seen DESC)",
+    ),
+    (
+        "idx_obs_first_seen",
+        "CREATE INDEX idx_obs_first_seen ON observations(first_seen)",
+    ),
+)
 
-    "CREATE INDEX IF NOT EXISTS idx_obs_entity_field_last "
-    "ON observations(entity_pk, field(64), last_seen DESC)",
-
-    "CREATE INDEX IF NOT EXISTS idx_obs_first_seen "
-    "ON observations(first_seen)",
+_SQL_CHECK_INDEX_EXISTS = (
+    "SELECT 1 FROM information_schema.STATISTICS "
+    "WHERE table_schema = DATABASE() AND table_name = 'observations' "
+    "AND index_name = %s LIMIT 1"
 )
 
 _SQL_SELECT_SCHEMA_VERSION = "SELECT version FROM schema_version LIMIT 1"
@@ -133,14 +148,6 @@ def _fmt(dt: datetime) -> str:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc).isoformat()
-
-
-_MYSQL_ERR_DUP_KEYNAME = 1061
-
-
-def _is_duplicate_index_error(err: Exception) -> bool:
-    """True if err is MySQL's "index already exists" (errno 1061), not a real failure."""
-    return bool(err.args) and err.args[0] == _MYSQL_ERR_DUP_KEYNAME
 
 
 class MySQLBackend(StorageBackend):
@@ -242,22 +249,23 @@ class MySQLBackend(StorageBackend):
                     )
                     await cur.execute(_SQL_CREATE_ENTITIES)
                     await cur.execute(_SQL_CREATE_OBSERVATIONS)
-                    for sql in _SQL_CREATE_INDEXES:
+                    for index_name, sql in _INDEX_DEFINITIONS:
+                        await cur.execute(_SQL_CHECK_INDEX_EXISTS, (index_name,))
+                        if await cur.fetchone():
+                            _LOGGER.debug(
+                                "Skipping index creation (already exists): %s", index_name
+                            )
+                            continue
                         try:
                             await cur.execute(sql)
                         except Exception as err:
-                            if _is_duplicate_index_error(err):
-                                _LOGGER.debug(
-                                    "Skipping index creation (already exists): %s", sql
-                                )
-                            else:
-                                _LOGGER.warning(
-                                    "Index creation failed and was skipped — queries "
-                                    "may be slower than expected until this is fixed "
-                                    "(%s): %s",
-                                    err,
-                                    sql,
-                                )
+                            _LOGGER.warning(
+                                "Index creation failed and was skipped — queries "
+                                "may be slower than expected until this is fixed "
+                                "(%s): %s",
+                                err,
+                                sql,
+                            )
                     await cur.execute(_SQL_INSERT_SCHEMA_VERSION, (_SCHEMA_VERSION,))
                     await conn.commit()
                     return
