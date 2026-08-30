@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -167,6 +168,14 @@ class SQLiteBackend(StorageBackend):
     # ------------------------------------------------------------------
 
     async def initialize(self) -> None:
+        # The parent directory may not exist yet (factory.py no longer creates
+        # it synchronously). mkdir is cheap in the common case but can stall
+        # on a network-mounted config directory or a slow disk, so it's kept
+        # off the event loop the same way any other blocking I/O here would be.
+        await asyncio.get_running_loop().run_in_executor(
+            None,
+            functools.partial(self._db_path.parent.mkdir, parents=True, exist_ok=True),
+        )
         self._conn = await aiosqlite.connect(self._db_path)
         self._conn.row_factory = aiosqlite.Row
         await self._conn.execute(_PRAGMA_FK)

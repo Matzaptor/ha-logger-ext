@@ -33,7 +33,10 @@ def create_backend(config: dict[str, Any], config_dir: str) -> StorageBackend:
             path = Path(raw)
             if not path.is_absolute():
                 path = Path(config_dir) / path
-            path.parent.mkdir(parents=True, exist_ok=True)
+            # Parent directory creation is deferred to SQLiteBackend.initialize()
+            # (already async), off the event loop via an executor job — doing it
+            # here would block the loop synchronously on a network-mounted
+            # config directory or a slow disk.
             return SQLiteBackend(path)
 
         case "duckdb":

@@ -416,25 +416,39 @@ class TestCreateBackend:
         expected = tmp_path / DEFAULT_DB_PATH
         assert backend._db_path == expected
 
-    def test_creates_parent_directory_for_default_path(self, tmp_path: Path) -> None:
-        create_backend({"db_type": DB_TYPE_SQLITE}, config_dir=str(tmp_path))
-        expected_dir = (tmp_path / DEFAULT_DB_PATH).parent
-        assert expected_dir.is_dir()
+    async def test_creates_parent_directory_for_default_path(self, tmp_path: Path) -> None:
+        # Directory creation happens in SQLiteBackend.initialize(), off the
+        # event loop — create_backend() itself only resolves the path now.
+        backend = create_backend({"db_type": DB_TYPE_SQLITE}, config_dir=str(tmp_path))
+        await backend.initialize()
+        try:
+            expected_dir = (tmp_path / DEFAULT_DB_PATH).parent
+            assert expected_dir.is_dir()
+        finally:
+            await backend.close()
 
-    def test_creates_parent_directory_for_nested_custom_path(self, tmp_path: Path) -> None:
-        create_backend(
+    async def test_creates_parent_directory_for_nested_custom_path(self, tmp_path: Path) -> None:
+        backend = create_backend(
             {"db_type": DB_TYPE_SQLITE, "db_path": "subdir/nested/custom.db"},
             config_dir=str(tmp_path),
         )
-        assert (tmp_path / "subdir" / "nested").is_dir()
+        await backend.initialize()
+        try:
+            assert (tmp_path / "subdir" / "nested").is_dir()
+        finally:
+            await backend.close()
 
-    def test_absolute_path_creates_parent_directory(self, tmp_path: Path) -> None:
+    async def test_absolute_path_creates_parent_directory(self, tmp_path: Path) -> None:
         abs_db = tmp_path / "abs" / "data.db"
-        create_backend(
+        backend = create_backend(
             {"db_type": DB_TYPE_SQLITE, "db_path": str(abs_db)},
             config_dir="/irrelevant",
         )
-        assert abs_db.parent.is_dir()
+        await backend.initialize()
+        try:
+            assert abs_db.parent.is_dir()
+        finally:
+            await backend.close()
 
     def test_returns_sqlite_backend_instance(self, tmp_path: Path) -> None:
         backend = create_backend({"db_type": DB_TYPE_SQLITE}, config_dir=str(tmp_path))
