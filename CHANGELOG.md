@@ -7,6 +7,21 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.4.4] — 2026-08-29
+
+### Fixed
+
+- **`create_backend()` blocked the event loop with a synchronous `mkdir`.** The SQLite branch
+  called `path.parent.mkdir(parents=True, exist_ok=True)` directly; this function runs from
+  `async_setup_entry` and from `_test_backend` in the config flow, in both cases with no
+  executor — on a network-mounted config directory or a slow disk this stalls Home Assistant's
+  entire event loop. Directory creation now happens inside `SQLiteBackend.initialize()` (already
+  `async def`), wrapped in `asyncio.get_running_loop().run_in_executor(...)`; `create_backend()`
+  itself no longer touches the filesystem, only resolves the path. Verified directly: the
+  directory does not exist before `initialize()` and does after, with a real `aiosqlite`
+  connection opened successfully in between. Reported during the `hacs/default` submission
+  review (hacs/default#9357); closes #54.
+
 ## [2.4.3] — 2026-08-29
 
 ### Fixed
