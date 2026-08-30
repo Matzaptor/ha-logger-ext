@@ -11,6 +11,7 @@ from homeassistant.helpers.selector import (
     EntitySelectorConfig,
     TextSelector,
     TextSelectorConfig,
+    TextSelectorType,
 )
 
 from .const import (
@@ -122,19 +123,26 @@ def _server_schema(
     db_port: int | None = None,
     db_name: str = DEFAULT_DB_NAME,
     db_username: str = "",
-    db_password: str = "",
     exclude_domains: list[str] | None = None,
     exclude_entities: list[str] | None = None,
     exclude_attributes: list[str] | None = None,
+    password_required: bool = True,
 ) -> vol.Schema:
     port = db_port if db_port is not None else _DEFAULT_PORT.get(db_type, DEFAULT_MYSQL_PORT)
+    # Never prefilled, even on reconfigure: only the marker (Required vs
+    # Optional) changes, so the stored secret is never echoed back into the
+    # browser. See async_step_reconfigure for how an empty submission falls
+    # back to the currently stored password instead of overwriting it.
+    password_marker = vol.Required if password_required else vol.Optional
     return vol.Schema(
         {
             vol.Required(CONF_DB_HOST, default=db_host): str,
             vol.Required(CONF_DB_PORT, default=port): vol.All(int, vol.Range(min=1, max=65535)),
             vol.Required(CONF_DB_NAME, default=db_name): str,
             vol.Required(CONF_DB_USERNAME, default=db_username): str,
-            vol.Required(CONF_DB_PASSWORD, default=db_password): str,
+            password_marker(CONF_DB_PASSWORD, default=""): TextSelector(
+                TextSelectorConfig(type=TextSelectorType.PASSWORD)
+            ),
             vol.Optional(
                 CONF_EXCLUDE_DOMAINS, default=exclude_domains or []
             ): TextSelector(TextSelectorConfig(multiple=True)),
@@ -243,6 +251,15 @@ class HaRecorderExtConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if self._db_type in DB_TYPE_EMBEDDED:
                 data = _build_embedded_data(self._db_type, user_input)
             else:
+                if not user_input.get(CONF_DB_PASSWORD):
+                    # Left blank: keep the password already on file instead of
+                    # overwriting it with an empty string. The field is never
+                    # prefilled with the stored value (see _server_schema), so
+                    # this is the only way to "not change" it on reconfigure.
+                    user_input = {
+                        **user_input,
+                        CONF_DB_PASSWORD: entry.data.get(CONF_DB_PASSWORD, ""),
+                    }
                 data = _build_server_data(self._db_type, user_input)
             error = await _test_backend(self.hass, data)
             if error:
@@ -265,10 +282,10 @@ class HaRecorderExtConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 db_port=current.get(CONF_DB_PORT),
                 db_name=current.get(CONF_DB_NAME, DEFAULT_DB_NAME),
                 db_username=current.get(CONF_DB_USERNAME, ""),
-                db_password=current.get(CONF_DB_PASSWORD, ""),
                 exclude_domains=current.get(CONF_EXCLUDE_DOMAINS, []),
                 exclude_entities=current.get(CONF_EXCLUDE_ENTITIES, []),
                 exclude_attributes=current.get(CONF_EXCLUDE_ATTRIBUTES, []),
+                password_required=False,
             )
 
         return self.async_show_form(

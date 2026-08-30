@@ -7,6 +7,22 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.4.5] — 2026-08-29
+
+### Fixed
+
+- **Database password shown in plaintext in the reconfigure flow.** `CONF_DB_PASSWORD` rendered
+  as an ordinary visible text box, and the reconfigure step passed the *already stored* password
+  back in as the form default — the saved secret was printed on screen every time a user
+  reconfigured the integration. The field now uses a `TextSelector` with
+  `TextSelectorType.PASSWORD` (matching the pattern `services.yaml` already used for the same
+  conceptual field), and is never prefilled with the stored value on reconfigure. Leaving the
+  field blank on reconfigure now keeps the password already on file instead of overwriting it
+  with an empty string — the only way to "not change it" now that it's never shown. Added two
+  tests covering both: the field's reconfigure default is empty, and submitting a blank password
+  preserves the stored one. Reported during the `hacs/default` submission review
+  (hacs/default#9357); closes #52.
+
 ## [2.4.4] — 2026-08-29
 
 ### Fixed
