@@ -163,6 +163,15 @@ State change observations are buffered in an in-memory queue and flushed to the 
 
 If the queue fills up before a flush, new observations are dropped and a warning is logged. Increase **Queue size limit** if this happens frequently.
 
+## Entities
+
+The integration creates two binary sensors alongside the config entry.
+
+| Entity | On when | Attributes |
+|---|---|---|
+| **Recording** | The background flush loop is running | `queue_size`, `last_flush`, `flush_interval_seconds` |
+| **Import in progress** | An `import_from_recorder` or `import_from_external_db` service call is currently running | `last_import_intervals_inserted` (once at least one import has completed) |
+
 ## Diagnostics
 
 The integration exposes diagnostics data under **Settings → Devices & Services → HA External Recorder → Download diagnostics**.
@@ -215,10 +224,11 @@ If you have months or years of history in the built-in HA Recorder, you can back
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `start_date` | ISO 8601 string | 2 years ago | Earliest date to import |
+| `start_date` | ISO 8601 string | none | Earliest date to import, defaults to the oldest state available in the recorder |
 | `end_date` | ISO 8601 string | today | Latest date to import |
 | `entity_ids` | list of entity IDs | all entities | Restrict import to specific entities |
 | `exclude_entities` | list of entity IDs | none | Skip these entities, applied after `entity_ids` resolves to a list |
+| `exclude_attributes` | list of attribute names | none | Skip these attributes for every imported entity, merged with the attributes excluded in the integration's own configuration |
 
 ### Idempotency and resumability
 
@@ -251,6 +261,7 @@ This service reads a backup of **another** Home Assistant instance's Recorder da
 | `end_date` | ISO 8601 string | no | Latest date to import, defaults to today |
 | `entity_ids` | list of entity IDs | no | Restrict import to specific entities |
 | `exclude_entities` | list of entity IDs | no | Skip these entities, applied after `entity_ids` resolves to a list |
+| `exclude_attributes` | list of attribute names | no | Skip these attributes for every imported entity, merged with the attributes excluded in the integration's own configuration |
 
 Connection parameters are used only for the duration of the call and are not persisted anywhere by ha_recorder_ext. They will, however, appear in Home Assistant's own service-call history and in any automation that calls this service — treat this the same as any other HA service with a password field.
 

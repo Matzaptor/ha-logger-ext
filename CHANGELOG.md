@@ -7,6 +7,24 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.4.9] — 2026-08-29
+
+### Fixed
+
+- **README documentation gaps.** Three issues from the same review round:
+  - `start_date` for `import_from_recorder` was documented as defaulting to "2 years ago"; the
+    code actually passes `None` and fetches the earliest available state with no bound —
+    `services.yaml` already described this correctly, only the README was stale.
+  - `exclude_attributes` was missing from both service parameter tables
+    (`import_from_recorder` and `import_from_external_db`) even though both services accept it.
+  - The README documented only the *Import in progress* binary sensor; a new **Entities**
+    section now also documents the **Recording** sensor and both sensors' attributes, verified
+    directly against `binary_sensor.py`.
+
+  Screenshots are still not included — out of scope here, since it requires a running Home
+  Assistant instance to capture them from. Reported during the `hacs/default` submission review
+  (hacs/default#9357); closes #57.
+
 ## [2.4.8] — 2026-08-29
 
 ### Fixed
