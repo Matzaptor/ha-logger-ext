@@ -342,6 +342,35 @@ class TestMySQLBackend:
         assert "Index creation failed and was skipped" in caplog.text
         assert "command denied" in caplog.text
 
+    async def test_initialize_skips_index_creation_when_already_exists(self) -> None:
+        """information_schema.STATISTICS reporting an index already exists must
+        skip that CREATE INDEX entirely — not attempt it and rely on MySQL
+        rejecting a duplicate (MySQL, unlike MariaDB, has no "IF NOT EXISTS"
+        for CREATE INDEX to fall back on)."""
+        cur, conn, pool, aiomysql_mock = _default_mocks()
+        last_sql = ""
+
+        def _exec_side_effect(sql: str, params: tuple = ()) -> None:
+            nonlocal last_sql
+            last_sql = sql
+
+        async def _fetchone_side_effect() -> tuple | None:
+            if "information_schema.STATISTICS" in last_sql:
+                return (1,)  # every index reported as already existing
+            return None  # fresh schema_version check
+
+        cur.execute = AsyncMock(side_effect=_exec_side_effect)
+        cur.fetchone = AsyncMock(side_effect=_fetchone_side_effect)
+
+        backend = _backend()
+        with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
+            await backend.initialize()
+
+        executed_sql = [call.args[0] for call in cur.execute.call_args_list]
+        assert sum("information_schema.STATISTICS" in sql for sql in executed_sql) == 3
+        assert not any(sql.startswith("CREATE INDEX") for sql in executed_sql)
+        conn.commit.assert_called_once()
+
     async def test_initialize_runs_registered_migration(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
         cur.fetchone = AsyncMock(return_value=(1,))
