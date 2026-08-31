@@ -105,6 +105,46 @@ class TestDuckDBBackend:
         backend = DuckDBBackend(tmp_path / "test.duckdb")
         await backend.close()
 
+    async def test_duckdb_migration_v2_retrofits_missing_indexes(self, tmp_path: Path) -> None:
+        """A database already stamped at schema_version 1 must get the
+        observation indexes (re-)created by the v2 migration — a no-op
+        safety net on DuckDB, whose CREATE INDEX IF NOT EXISTS was never
+        broken, but exercises the same retrofit path relied on to fix the
+        real gap on the MySQL backend."""
+        import duckdb as duckdb_pkg
+
+        from custom_components.ha_recorder_ext.storage import duckdb as _duckdb_module
+
+        db_path = tmp_path / "v1_no_indexes.duckdb"
+        conn = duckdb_pkg.connect(str(db_path))
+        conn.execute("CREATE TABLE schema_version (version INTEGER NOT NULL)")
+        conn.execute("INSERT INTO schema_version (version) VALUES (1)")
+        conn.execute(_duckdb_module._SQL_CREATE_ENTITIES)
+        conn.execute(_duckdb_module._SQL_CREATE_OBSERVATIONS)
+        conn.commit()
+        conn.close()
+
+        backend = DuckDBBackend(db_path)
+        await backend.initialize()
+        await backend.close()
+
+        conn = duckdb_pkg.connect(str(db_path))
+        index_names = {
+            row[0]
+            for row in conn.execute(
+                "SELECT index_name FROM duckdb_indexes() WHERE table_name = 'observations'"
+            ).fetchall()
+        }
+        version = conn.execute("SELECT version FROM schema_version").fetchone()[0]
+        conn.close()
+
+        assert index_names == {
+            "idx_obs_entity_field",
+            "idx_obs_entity_field_last",
+            "idx_obs_first_seen",
+        }
+        assert version == _duckdb_module._SCHEMA_VERSION
+
     async def test_duckdb_schema_newer_than_integration_raises(self, tmp_path: Path) -> None:
         import duckdb
 

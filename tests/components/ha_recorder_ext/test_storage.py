@@ -297,8 +297,8 @@ class TestSchemaMigrations:
         original_version = _mod._SCHEMA_VERSION
         original_migrations = dict(_mod._MIGRATIONS)
         try:
-            _mod._SCHEMA_VERSION = 2
-            _mod._MIGRATIONS[2] = _fake_v2
+            _mod._SCHEMA_VERSION = original_version + 1
+            _mod._MIGRATIONS[original_version + 1] = _fake_v2
 
             b2 = SQLiteBackend(db_path)
             await b2.initialize()
@@ -314,7 +314,68 @@ class TestSchemaMigrations:
             conn.row_factory = aiosqlite.Row
             async with conn.execute("SELECT version FROM schema_version") as cur:
                 row = await cur.fetchone()
-        assert row["version"] == 2
+        assert row["version"] == original_version + 1
+
+    async def test_migration_v2_retrofits_missing_indexes(self, tmp_path: Path) -> None:
+        """Regression test: a database stamped at schema_version 1 without
+        the observation indexes (as happened on the MySQL backend before
+        v2.4.7, when index creation failed silently) must get them created
+        by the v2 migration on the next initialize(), not stay without
+        indexes forever."""
+        db_path = tmp_path / "v1_no_indexes.db"
+
+        async with aiosqlite.connect(db_path) as conn:
+            await conn.execute("CREATE TABLE schema_version (version INTEGER NOT NULL)")
+            await conn.execute("INSERT INTO schema_version (version) VALUES (1)")
+            await conn.execute("""
+                CREATE TABLE entities (
+                    id BLOB NOT NULL PRIMARY KEY,
+                    entity_id TEXT NOT NULL UNIQUE,
+                    domain TEXT NOT NULL,
+                    first_seen TEXT NOT NULL,
+                    last_seen TEXT NOT NULL
+                )
+            """)
+            await conn.execute("""
+                CREATE TABLE observations (
+                    id BLOB NOT NULL PRIMARY KEY,
+                    entity_pk BLOB NOT NULL,
+                    field TEXT NOT NULL,
+                    value_type TEXT NOT NULL,
+                    value_str TEXT,
+                    value_int INTEGER,
+                    value_float REAL,
+                    value_bool INTEGER,
+                    value_datetime TEXT,
+                    value_date TEXT,
+                    value_time TEXT,
+                    value_json TEXT,
+                    first_seen TEXT NOT NULL,
+                    last_seen TEXT NOT NULL
+                )
+            """)
+            await conn.commit()
+
+        b = SQLiteBackend(db_path)
+        await b.initialize()
+        await b.close()
+
+        async with aiosqlite.connect(db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            async with conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'idx_obs_%'"
+            ) as cur:
+                rows = await cur.fetchall()
+            index_names = {row["name"] for row in rows}
+            async with conn.execute("SELECT version FROM schema_version") as cur:
+                version_row = await cur.fetchone()
+
+        assert index_names == {
+            "idx_obs_entity_field",
+            "idx_obs_entity_field_last",
+            "idx_obs_first_seen",
+        }
+        assert version_row["version"] == _SCHEMA_VERSION
 
     async def test_missing_migration_raises(self, tmp_path: Path) -> None:
         """NotImplementedError if a required migration has no registered function."""
@@ -327,7 +388,7 @@ class TestSchemaMigrations:
         import custom_components.ha_recorder_ext.storage.sqlite as _mod
         original_version = _mod._SCHEMA_VERSION
         try:
-            _mod._SCHEMA_VERSION = 2  # bump without registering a migration
+            _mod._SCHEMA_VERSION = original_version + 1  # bump without registering a migration
 
             b2 = SQLiteBackend(db_path)
             with pytest.raises(NotImplementedError):

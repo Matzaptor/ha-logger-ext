@@ -14,7 +14,7 @@ from .base import ObservationRecord, StorageBackend
 
 _LOGGER = logging.getLogger(__name__)
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 
 # Neither connecting nor querying MySQL times out by default in aiomysql, so
 # a dead connection or network blip would otherwise hang every read/write
@@ -130,10 +130,42 @@ WHERE entity_pk = %s AND field = %s
 LIMIT 1
 """
 
+
+async def _ensure_indexes(cur: aiomysql.Cursor) -> None:
+    """Create any of _INDEX_DEFINITIONS not already present on `observations`.
+
+    Used both for a fresh schema and as the v2 migration that retrofits
+    indexes onto a database initialized before v2.4.7, when a MySQL syntax
+    error during index creation was silently swallowed (see CHANGELOG).
+    """
+    for index_name, sql in _INDEX_DEFINITIONS:
+        await cur.execute(_SQL_CHECK_INDEX_EXISTS, (index_name,))
+        if await cur.fetchone():
+            _LOGGER.debug("Skipping index creation (already exists): %s", index_name)
+            continue
+        try:
+            await cur.execute(sql)
+        except Exception as err:
+            _LOGGER.warning(
+                "Index creation failed and was skipped — queries "
+                "may be slower than expected until this is fixed "
+                "(%s): %s",
+                err,
+                sql,
+            )
+
+
+async def _migrate_to_v2(conn: aiomysql.Connection) -> None:
+    """Retrofit observation indexes onto a pre-2.4.7 MySQL database that
+    never got them due to the CREATE INDEX IF NOT EXISTS syntax error."""
+    async with conn.cursor() as cur:
+        await _ensure_indexes(cur)
+
+
 # Maps target schema version → async migration coroutine.
 # Each function receives an open aiomysql.Connection and must not commit.
 _MigrationFn = Callable[[aiomysql.Connection], Awaitable[None]]
-_MIGRATIONS: dict[int, _MigrationFn] = {}
+_MIGRATIONS: dict[int, _MigrationFn] = {2: _migrate_to_v2}
 
 
 def _to_blob(u: uuid.UUID) -> bytes:
@@ -249,23 +281,7 @@ class MySQLBackend(StorageBackend):
                     )
                     await cur.execute(_SQL_CREATE_ENTITIES)
                     await cur.execute(_SQL_CREATE_OBSERVATIONS)
-                    for index_name, sql in _INDEX_DEFINITIONS:
-                        await cur.execute(_SQL_CHECK_INDEX_EXISTS, (index_name,))
-                        if await cur.fetchone():
-                            _LOGGER.debug(
-                                "Skipping index creation (already exists): %s", index_name
-                            )
-                            continue
-                        try:
-                            await cur.execute(sql)
-                        except Exception as err:
-                            _LOGGER.warning(
-                                "Index creation failed and was skipped — queries "
-                                "may be slower than expected until this is fixed "
-                                "(%s): %s",
-                                err,
-                                sql,
-                            )
+                    await _ensure_indexes(cur)
                     await cur.execute(_SQL_INSERT_SCHEMA_VERSION, (_SCHEMA_VERSION,))
                     await conn.commit()
                     return
