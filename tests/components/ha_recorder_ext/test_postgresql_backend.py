@@ -49,6 +49,30 @@ class TestPostgreSQLBackendTimeouts:
         assert create_pool.call_args.kwargs["command_timeout"] == 300
 
 
+class TestPostgreSQLSchemaMigrations:
+    async def test_migration_v2_retrofits_missing_indexes_on_v1_database(self) -> None:
+        """A database already stamped at schema_version 1 must get the
+        observation indexes (re-)created by the v2 migration — a no-op
+        safety net on PostgreSQL, whose CREATE INDEX IF NOT EXISTS was
+        never broken, but exercises the same retrofit path relied on to
+        fix the real gap on the MySQL backend."""
+        conn = MagicMock()
+        conn.execute = AsyncMock()
+        conn.fetchrow = AsyncMock(return_value={"version": 1})
+        conn.transaction = MagicMock(return_value=_DualMock(None))
+        pool = MagicMock()
+        pool.acquire = MagicMock(side_effect=lambda: _DualMock(conn))
+
+        create_pool = AsyncMock(return_value=pool)
+        with patch("asyncpg.create_pool", create_pool):
+            backend = _backend()
+            await backend.initialize()
+
+        executed_sql = [call.args[0] for call in conn.execute.call_args_list]
+        assert sum(sql.startswith("CREATE INDEX IF NOT EXISTS") for sql in executed_sql) == 3
+        assert any(sql.startswith("UPDATE schema_version") for sql in executed_sql)
+
+
 class TestPostgreSQLBackendConcurrency:
     async def test_concurrent_call_waits_for_open_transaction(self) -> None:
         """A concurrent read/write while a transaction is open (e.g. the live

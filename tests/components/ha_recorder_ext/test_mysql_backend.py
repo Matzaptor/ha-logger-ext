@@ -188,7 +188,7 @@ class TestMySQLBackend:
 
     async def test_query_timeout_raises_clear_error(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
-        cur.fetchone = AsyncMock(return_value=(1,))  # schema already current
+        cur.fetchone = AsyncMock(return_value=(2,))  # schema already current
 
         backend = _backend()
         with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
@@ -212,7 +212,7 @@ class TestMySQLBackend:
         raise, not hang: this is the failure mode a previous connection-leak
         bug in _execute() used to produce with no timeout protection at all."""
         cur, conn, pool, aiomysql_mock = _default_mocks()
-        cur.fetchone = AsyncMock(return_value=(1,))  # schema already current
+        cur.fetchone = AsyncMock(return_value=(2,))  # schema already current
 
         backend = _backend()
         with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
@@ -238,7 +238,7 @@ class TestMySQLBackend:
         pk_bytes = uuid7().bytes
         cur.fetchone = AsyncMock(
             side_effect=[
-                (1,),  # schema version check during initialize()
+                (2,),  # schema version check during initialize()
                 None,  # entity lookup: not found yet
                 (pk_bytes,),  # re-fetch after INSERT IGNORE
             ]
@@ -255,7 +255,7 @@ class TestMySQLBackend:
 
     async def test_initialize_no_op_when_schema_already_current(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
-        cur.fetchone = AsyncMock(return_value=(1,))  # already at version 1
+        cur.fetchone = AsyncMock(return_value=(2,))  # already at current version
 
         backend = _backend()
         with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
@@ -274,11 +274,11 @@ class TestMySQLBackend:
 
     async def test_initialize_raises_on_missing_migration_function(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
-        cur.fetchone = AsyncMock(return_value=(1,))  # current version is 1; integration wants 2
+        cur.fetchone = AsyncMock(return_value=(2,))  # current is 2; integration wants 3, unregistered
 
         backend = _backend()
         with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
-            with patch.object(_mysql_module, "_SCHEMA_VERSION", 2):
+            with patch.object(_mysql_module, "_SCHEMA_VERSION", 3):
                 with pytest.raises(NotImplementedError, match="No migration defined"):
                     await backend.initialize()
 
@@ -389,6 +389,39 @@ class TestMySQLBackend:
         assert calls == ["v2"]
         conn.commit.assert_called_once()  # final UPDATE + commit
 
+    async def test_migration_v2_retrofits_missing_indexes_on_v1_database(self) -> None:
+        """Regression test for the pre-2.4.7 MySQL bug: a database already
+        stamped at schema_version 1 that never got its indexes (the old
+        CREATE INDEX IF NOT EXISTS syntax error was swallowed silently on
+        real MySQL) must get them created by the real, registered v2
+        migration — not stay without indexes forever."""
+        cur, conn, pool, aiomysql_mock = _default_mocks()
+        last_sql = ""
+
+        def _exec_side_effect(sql: str, params: tuple = ()) -> None:
+            nonlocal last_sql
+            last_sql = sql
+
+        async def _fetchone_side_effect() -> tuple | None:
+            if "information_schema.STATISTICS" in last_sql:
+                return None  # no index exists yet — the pre-fix state
+            if "SELECT version FROM schema_version" in last_sql:
+                return (1,)  # database already stamped at v1, no indexes
+            return None
+
+        cur.execute = AsyncMock(side_effect=_exec_side_effect)
+        cur.fetchone = AsyncMock(side_effect=_fetchone_side_effect)
+
+        backend = _backend()
+        with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
+            await backend.initialize()
+
+        executed_sql = [call.args[0] for call in cur.execute.call_args_list]
+        assert sum(sql.startswith("CREATE INDEX") for sql in executed_sql) == 3
+        assert not any(sql.startswith("CREATE TABLE IF NOT EXISTS observations") for sql in executed_sql)
+        assert any(sql.startswith("UPDATE schema_version") for sql in executed_sql)
+        conn.commit.assert_called_once()
+
     # ------------------------------------------------------------------
     # Lifecycle: close
     # ------------------------------------------------------------------
@@ -399,7 +432,7 @@ class TestMySQLBackend:
 
     async def test_close_releases_pool(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
-        cur.fetchone = AsyncMock(return_value=(1,))
+        cur.fetchone = AsyncMock(return_value=(2,))
 
         backend = _backend()
         with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
@@ -412,7 +445,7 @@ class TestMySQLBackend:
 
     async def test_close_releases_active_transaction_connection(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
-        cur.fetchone = AsyncMock(return_value=(1,))
+        cur.fetchone = AsyncMock(return_value=(2,))
 
         backend = _backend()
         with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
@@ -433,7 +466,7 @@ class TestMySQLBackend:
         cur, conn, pool, aiomysql_mock = _default_mocks()
         entity_pk = uuid7()
         # schema check → entity not found → entity found after INSERT IGNORE
-        cur.fetchone = AsyncMock(side_effect=[(1,), None, (entity_pk.bytes,)])
+        cur.fetchone = AsyncMock(side_effect=[(2,), None, (entity_pk.bytes,)])
 
         backend = _backend()
         with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
@@ -446,7 +479,7 @@ class TestMySQLBackend:
     async def test_get_or_create_entity_returns_existing_entity(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
         entity_pk = uuid7()
-        cur.fetchone = AsyncMock(side_effect=[(1,), (entity_pk.bytes,)])
+        cur.fetchone = AsyncMock(side_effect=[(2,), (entity_pk.bytes,)])
 
         backend = _backend()
         with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
@@ -459,7 +492,7 @@ class TestMySQLBackend:
         """When INSERT IGNORE is a no-op (race), the pk comes from the post-insert re-fetch."""
         cur, conn, pool, aiomysql_mock = _default_mocks()
         winner_pk = uuid7()
-        cur.fetchone = AsyncMock(side_effect=[(1,), None, (winner_pk.bytes,)])
+        cur.fetchone = AsyncMock(side_effect=[(2,), None, (winner_pk.bytes,)])
 
         backend = _backend()
         with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
@@ -471,7 +504,7 @@ class TestMySQLBackend:
     async def test_get_or_create_entity_updates_last_seen_for_existing(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
         entity_pk = uuid7()
-        cur.fetchone = AsyncMock(side_effect=[(1,), (entity_pk.bytes,)])
+        cur.fetchone = AsyncMock(side_effect=[(2,), (entity_pk.bytes,)])
 
         backend = _backend()
         with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
@@ -490,7 +523,7 @@ class TestMySQLBackend:
         cur, conn, pool, aiomysql_mock = _default_mocks()
         entity_pk = uuid7()
         obs = _obs(entity_pk, "state", "float", value_float=21.5)
-        cur.fetchone = AsyncMock(side_effect=[(1,), _obs_row(obs)])
+        cur.fetchone = AsyncMock(side_effect=[(2,), _obs_row(obs)])
 
         backend = _backend()
         with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
@@ -505,7 +538,7 @@ class TestMySQLBackend:
 
     async def test_get_latest_observation_returns_none_when_absent(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
-        cur.fetchone = AsyncMock(side_effect=[(1,), None])
+        cur.fetchone = AsyncMock(side_effect=[(2,), None])
 
         backend = _backend()
         with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
@@ -536,7 +569,7 @@ class TestMySQLBackend:
             TS_STR, TS_STR,
         ))
         row[col_idx] = value
-        cur.fetchone = AsyncMock(side_effect=[(1,), tuple(row)])
+        cur.fetchone = AsyncMock(side_effect=[(2,), tuple(row)])
 
         backend = _backend()
         with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
@@ -553,7 +586,7 @@ class TestMySQLBackend:
 
     async def test_insert_observation_float(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
-        cur.fetchone = AsyncMock(return_value=(1,))
+        cur.fetchone = AsyncMock(return_value=(2,))
         entity_pk = uuid7()
         obs = _obs(entity_pk, "state", "float", value_float=21.5)
 
@@ -572,7 +605,7 @@ class TestMySQLBackend:
 
     async def test_insert_observation_str(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
-        cur.fetchone = AsyncMock(return_value=(1,))
+        cur.fetchone = AsyncMock(return_value=(2,))
         entity_pk = uuid7()
         obs = _obs(entity_pk, "state", "str", value_str="on")
 
@@ -589,7 +622,7 @@ class TestMySQLBackend:
 
     async def test_insert_observation_int(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
-        cur.fetchone = AsyncMock(return_value=(1,))
+        cur.fetchone = AsyncMock(return_value=(2,))
         entity_pk = uuid7()
         obs = _obs(entity_pk, "count", "int", value_int=99)
 
@@ -606,7 +639,7 @@ class TestMySQLBackend:
 
     async def test_insert_observation_bool(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
-        cur.fetchone = AsyncMock(return_value=(1,))
+        cur.fetchone = AsyncMock(return_value=(2,))
         entity_pk = uuid7()
         obs = _obs(entity_pk, "on", "bool", value_bool=1)
 
@@ -623,7 +656,7 @@ class TestMySQLBackend:
 
     async def test_insert_observation_json(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
-        cur.fetchone = AsyncMock(return_value=(1,))
+        cur.fetchone = AsyncMock(return_value=(2,))
         entity_pk = uuid7()
         obs = _obs(entity_pk, "attrs", "json", value_json='{"k": 1}')
 
@@ -640,7 +673,7 @@ class TestMySQLBackend:
 
     async def test_insert_observation_encodes_uuids_as_bytes(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
-        cur.fetchone = AsyncMock(return_value=(1,))
+        cur.fetchone = AsyncMock(return_value=(2,))
         entity_pk = uuid7()
         obs = _obs(entity_pk, "state", "str", value_str="x")
 
@@ -657,7 +690,7 @@ class TestMySQLBackend:
 
     async def test_insert_observation_formats_timestamps_as_utc_iso(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
-        cur.fetchone = AsyncMock(return_value=(1,))
+        cur.fetchone = AsyncMock(return_value=(2,))
         entity_pk = uuid7()
         obs = _obs(entity_pk, "state", "str", value_str="on")
 
@@ -674,7 +707,7 @@ class TestMySQLBackend:
 
     async def test_insert_observation_auto_commits_outside_transaction(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
-        cur.fetchone = AsyncMock(return_value=(1,))
+        cur.fetchone = AsyncMock(return_value=(2,))
         obs = _obs(uuid7(), "state", "float", value_float=1.0)
 
         backend = _backend()
@@ -691,7 +724,7 @@ class TestMySQLBackend:
 
     async def test_update_last_seen_issues_correct_sql(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
-        cur.fetchone = AsyncMock(return_value=(1,))
+        cur.fetchone = AsyncMock(return_value=(2,))
         obs_id = uuid7()
         ts2 = TS + timedelta(hours=1)
 
@@ -713,7 +746,7 @@ class TestMySQLBackend:
 
     async def test_has_observations_in_range_returns_true(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
-        cur.fetchone = AsyncMock(side_effect=[(1,), (1,)])  # schema, then found row
+        cur.fetchone = AsyncMock(side_effect=[(2,), (1,)])  # schema, then found row
 
         backend = _backend()
         with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
@@ -726,7 +759,7 @@ class TestMySQLBackend:
 
     async def test_has_observations_in_range_returns_false(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
-        cur.fetchone = AsyncMock(side_effect=[(1,), None])
+        cur.fetchone = AsyncMock(side_effect=[(2,), None])
 
         backend = _backend()
         with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
@@ -740,7 +773,7 @@ class TestMySQLBackend:
     async def test_has_observations_in_range_passes_end_before_start_in_params(self) -> None:
         """SQL uses first_seen <= end AND last_seen >= start, so end is param[2], start is param[3]."""
         cur, conn, pool, aiomysql_mock = _default_mocks()
-        cur.fetchone = AsyncMock(side_effect=[(1,), None])
+        cur.fetchone = AsyncMock(side_effect=[(2,), None])
         entity_pk = uuid7()
         start = TS
         end = TS + timedelta(hours=2)
@@ -765,7 +798,7 @@ class TestMySQLBackend:
 
     async def test_begin_sets_transaction_state(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
-        cur.fetchone = AsyncMock(return_value=(1,))
+        cur.fetchone = AsyncMock(return_value=(2,))
 
         backend = _backend()
         with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
@@ -784,7 +817,7 @@ class TestMySQLBackend:
         corrupt aiomysql's wire protocol (RuntimeError: readexactly() called
         while another coroutine is already waiting for incoming data)."""
         cur, conn, pool, aiomysql_mock = _default_mocks()
-        cur.fetchone = AsyncMock(return_value=(1,))
+        cur.fetchone = AsyncMock(return_value=(2,))
 
         backend = _backend()
         with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
@@ -810,7 +843,7 @@ class TestMySQLBackend:
 
     async def test_commit_clears_transaction_state(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
-        cur.fetchone = AsyncMock(return_value=(1,))
+        cur.fetchone = AsyncMock(return_value=(2,))
 
         backend = _backend()
         with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
@@ -825,7 +858,7 @@ class TestMySQLBackend:
 
     async def test_rollback_clears_transaction_state(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
-        cur.fetchone = AsyncMock(return_value=(1,))
+        cur.fetchone = AsyncMock(return_value=(2,))
 
         backend = _backend()
         with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
@@ -841,7 +874,7 @@ class TestMySQLBackend:
     async def test_insert_in_transaction_does_not_call_pool_acquire(self) -> None:
         """Inside a transaction, _execute uses the dedicated conn, not pool.acquire()."""
         cur, conn, pool, aiomysql_mock = _default_mocks()
-        cur.fetchone = AsyncMock(return_value=(1,))
+        cur.fetchone = AsyncMock(return_value=(2,))
         obs = _obs(uuid7(), "state", "int", value_int=42)
 
         backend = _backend()
@@ -859,7 +892,7 @@ class TestMySQLBackend:
     async def test_fetchone_in_transaction_uses_active_conn(self) -> None:
         """_fetchone in transaction mode goes through self._conn, not pool.acquire()."""
         cur, conn, pool, aiomysql_mock = _default_mocks()
-        cur.fetchone = AsyncMock(side_effect=[(1,), None])
+        cur.fetchone = AsyncMock(side_effect=[(2,), None])
 
         backend = _backend()
         with patch.object(_mysql_module, "aiomysql", aiomysql_mock):
@@ -875,7 +908,7 @@ class TestMySQLBackend:
 
     async def test_insert_in_transaction_does_not_auto_commit(self) -> None:
         cur, conn, pool, aiomysql_mock = _default_mocks()
-        cur.fetchone = AsyncMock(return_value=(1,))
+        cur.fetchone = AsyncMock(return_value=(2,))
         obs = _obs(uuid7(), "state", "float", value_float=1.0)
 
         backend = _backend()

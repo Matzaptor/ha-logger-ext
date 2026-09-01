@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 
 _SQL_CREATE_SCHEMA_VERSION = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -107,12 +107,23 @@ WHERE entity_pk = ? AND field = ?
 LIMIT 1
 """
 
+
+def _migrate_to_v2(conn: "duckdb.DuckDBPyConnection") -> None:
+    """Ensure observation indexes exist. Re-running CREATE INDEX IF NOT
+    EXISTS is a no-op on a database that already has them; it's a retrofit
+    safety net for a database whose fresh-init index creation was somehow
+    skipped or interrupted (see the MySQL backend for a real-world case of
+    this happening on a different engine)."""
+    for sql in _SQL_CREATE_INDEXES:
+        conn.execute(sql)
+
+
 # Maps target schema version → sync migration function.
 # Each function receives an open duckdb.DuckDBPyConnection and must not commit.
 # String forward-ref: duckdb is only imported for type checking (see below), so
 # the real name isn't in scope at module load time for users without it installed.
 _MigrationFn = Callable[["duckdb.DuckDBPyConnection"], None]
-_MIGRATIONS: dict[int, _MigrationFn] = {}
+_MIGRATIONS: dict[int, _MigrationFn] = {2: _migrate_to_v2}
 
 
 def _to_blob(u: uuid.UUID) -> bytes:

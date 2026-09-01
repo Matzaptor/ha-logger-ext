@@ -16,7 +16,7 @@ from .base import ObservationRecord, StorageBackend
 
 _LOGGER = logging.getLogger(__name__)
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 
 _PRAGMA_FK = "PRAGMA foreign_keys = ON"
 _PRAGMA_WAL = "PRAGMA journal_mode = WAL"
@@ -115,15 +115,25 @@ LIMIT 1
 """
 
 
+async def _migrate_to_v2(conn: aiosqlite.Connection) -> None:
+    """Ensure observation indexes exist. Re-running CREATE INDEX IF NOT
+    EXISTS is a no-op on a database that already has them; it's a retrofit
+    safety net for a database whose fresh-init index creation was somehow
+    skipped or interrupted (see the MySQL backend for a real-world case of
+    this happening on a different engine)."""
+    for sql in _SQL_CREATE_INDEXES:
+        await conn.execute(sql)
+
+
 # Maps target schema version → async migration coroutine.
 # Each function receives an open aiosqlite.Connection and must not commit.
 # To add a migration: define an async function and register it here.
 # Example:
-#   async def _migrate_to_v2(conn: aiosqlite.Connection) -> None:
+#   async def _migrate_to_v3(conn: aiosqlite.Connection) -> None:
 #       await conn.execute("ALTER TABLE observations ADD COLUMN ...")
-#   _MIGRATIONS[2] = _migrate_to_v2
+#   _MIGRATIONS[3] = _migrate_to_v3
 _MigrationFn = Callable[[aiosqlite.Connection], Awaitable[None]]
-_MIGRATIONS: dict[int, _MigrationFn] = {}
+_MIGRATIONS: dict[int, _MigrationFn] = {2: _migrate_to_v2}
 
 
 def _to_blob(u: uuid.UUID) -> bytes:

@@ -7,6 +7,26 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.4.10] — 2026-08-31
+
+### Fixed
+
+- **No retrofit path for observation indexes on an already-initialized database.** All four
+  backends only ever created the `observations` indexes (including the composite
+  `(entity_pk, field, last_seen DESC)` index the deduplication hot path relies on) on a fresh
+  schema (`schema_version 0 → 1`); `_MIGRATIONS` was empty everywhere, so a database that reached
+  `schema_version 1` without them had no way to get them later. This mattered concretely for
+  MySQL/MariaDB: any database initialized before v2.4.7 (see that entry) could have been left
+  with zero secondary indexes on `observations`, degrading `get_latest_observation` and
+  `has_observations_in_range` to full table scans, with no automatic recovery. Added a
+  `schema_version 2` migration to SQLite, PostgreSQL, DuckDB, and MySQL that re-runs each
+  backend's existing idempotent index-creation logic — a cheap no-op on the first three (their
+  `CREATE INDEX IF NOT EXISTS` was never broken), and the actual fix on MySQL, where the
+  fresh-init `information_schema.STATISTICS`-checked creation loop is now shared (via a new
+  `_ensure_indexes()` helper) between the fresh-schema path and this migration. Added regression
+  tests on all four backends verifying a `schema_version 1` database without indexes gets all
+  three created and is bumped to `schema_version 2` on the next `initialize()`.
+
 ## [2.4.9] — 2026-08-29
 
 ### Fixed

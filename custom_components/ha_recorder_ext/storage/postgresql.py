@@ -14,7 +14,7 @@ from .base import ObservationRecord, StorageBackend
 
 _LOGGER = logging.getLogger(__name__)
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 
 # Neither connecting nor querying PostgreSQL times out by default in asyncpg,
 # so a dead connection or network blip would otherwise hang every read/write
@@ -108,8 +108,19 @@ WHERE entity_pk = $1 AND field = $2
 LIMIT 1
 """
 
+
+async def _migrate_to_v2(conn: asyncpg.Connection) -> None:
+    """Ensure observation indexes exist. Re-running CREATE INDEX IF NOT
+    EXISTS is a no-op on a database that already has them; it's a retrofit
+    safety net for a database whose fresh-init index creation was somehow
+    skipped or interrupted (see the MySQL backend for a real-world case of
+    this happening on a different engine)."""
+    for sql in _SQL_CREATE_INDEXES:
+        await conn.execute(sql)
+
+
 _MigrationFn = Callable[[asyncpg.Connection], Awaitable[None]]
-_MIGRATIONS: dict[int, _MigrationFn] = {}
+_MIGRATIONS: dict[int, _MigrationFn] = {2: _migrate_to_v2}
 
 
 def _to_blob(u: uuid.UUID) -> bytes:
